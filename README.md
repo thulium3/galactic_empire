@@ -224,11 +224,19 @@ srv/lib/combat.js      battle resolution
 srv/lib/turn-engine.js turn resolution
 srv/lib/turn-timer.js  turn time limit enforcement
 srv/lib/event-bus.js   pub/sub for live events, dispatched after commit
+srv/lib/rng.js         seeded PRNG - same seed, same galaxy and same battles
+srv/lib/names.js       planet names, player colors
+mta.yaml               BTP deployment descriptor
+xs-security.json       XSUAA scopes and role templates
+app/router/            approuter: routes, logout, static hosting of app/
+test/                  backend tests (*.test.js) + ui-smoke.mjs
 ```
 
 ## Not implemented yet
 
+- Solo play: a game needs at least two players, so a single identity cannot
+  start one. No AI opponent either.
 - Fleet recall, waypoints, multi-hop routes
-- Redis fan-out for the event bus (single instance only today - see `event-bus.js`)
-- XSUAA role collections and `mta.yaml` for BTP deployment
-- Spectator / replay API
+- Redis fan-out for the event bus, so the backend could run more than one
+  instance (see `event-bus.js` and `instances: 1` in `mta.yaml`)
+- Spectator / replay API - the seed makes replays possible, nothing reads it back
