@@ -1,0 +1,75 @@
+{
+  "name": "galactic-empire",
+  "version": "0.1.0",
+  "description": "Turn-based multiplayer space conquest game - CAP backend",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@sap/cds": "^9",
+    "@cap-js/sqlite": "^2",
+    "express": "^4"
+  },
+  "devDependencies": {
+    "@cap-js/cds-test": "^0"
+  },
+  "scripts": {
+    "start": "cds-serve",
+    "watch": "cds watch",
+    "test": "node --test \"test/*.test.js\"",
+    "deploy": "cds deploy --to sqlite:db.sqlite"
+  },
+  "cds": {
+    "requires": {
+      "db": {
+        "kind": "sqlite",
+        "credentials": {
+          "url": "db.sqlite"
+        }
+      },
+      "auth": {
+        "[development]": {
+          "kind": "mocked",
+          "users": {
+            "alice": {
+              "roles": [
+                "player"
+              ]
+            },
+            "bob": {
+              "roles": [
+                "player"
+              ]
+            },
+            "carol": {
+              "roles": [
+                "player"
+              ]
+            },
+            "dave": {
+              "roles": [
+                "player"
+              ]
+            },
+            "admin": {
+              "roles": [
+                "player",
+                "gamemaster"
+              ]
+            }
+          }
+        },
+        "[production]": {
+          "kind": "xsuaa"
+        }
+      }
+    },
+    "features": {
+      "assert_integrity": false
+    }
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}

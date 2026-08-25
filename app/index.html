@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Galactic Empire</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ------------------------------------------------------------ login -->
+<section id="login" class="overlay">
+  <div class="dialog">
+    <h1>Galactic Empire</h1>
+    <p class="hint">Development login - pick a mocked user.</p>
+    <div class="field">
+      <label for="login-user">Commander</label>
+      <input id="login-user" list="mock-users" value="alice" autocomplete="off">
+      <datalist id="mock-users">
+        <option value="alice"><option value="bob"><option value="carol"><option value="dave"><option value="admin">
+      </datalist>
+    </div>
+    <button id="login-btn" class="primary">Enter</button>
+    <p id="login-error" class="error"></p>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ lobby -->
+<section id="lobby" class="overlay hidden">
+  <div class="dialog wide">
+    <header class="dialog-head">
+      <h1>Galactic Empire</h1>
+      <span class="who">Commander <b id="lobby-user"></b> <button id="logout-btn" class="link">switch</button></span>
+    </header>
+
+    <div class="lobby-grid">
+      <div>
+        <h2>Open games</h2>
+        <ul id="game-list" class="game-list"></ul>
+      </div>
+      <div>
+        <h2>New game</h2>
+        <div class="field"><label for="new-name">Name</label><input id="new-name" value="Skirmish"></div>
+        <div class="field-row">
+          <div class="field"><label for="new-planets">Planets</label><input id="new-planets" type="number" value="99" min="4" max="150"></div>
+          <div class="field"><label for="new-players">Max players</label><input id="new-players" type="number" value="4" min="2" max="12"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="new-limit">Turn limit (s)</label><input id="new-limit" type="number" value="300" min="10"></div>
+          <div class="field"><label for="new-speed">Ship speed</label><input id="new-speed" type="number" value="200" min="10"></div>
+        </div>
+        <button id="create-btn" class="primary">Create &amp; join</button>
+        <p id="lobby-error" class="error"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------- game -->
+<main id="game" class="hidden">
+  <div id="map-pane">
+    <svg id="starmap" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="tooltip" class="tooltip hidden"></div>
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <aside id="sidebar">
+    <header class="side-head">
+      <div>
+        <h2 id="game-name"></h2>
+        <span class="sub"><b id="turn-no">-</b> &middot; <span id="countdown">--:--</span></span>
+      </div>
+      <button id="leave-btn" class="link">lobby</button>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><span class="stat-value" id="stat-resources">0</span><span class="stat-label">resources</span></div>
+      <div class="stat"><span class="stat-value" id="stat-planets">0</span><span class="stat-label">planets</span></div>
+      <div class="stat"><span class="stat-value" id="stat-ships">0</span><span class="stat-label">ships</span></div>
+      <div class="stat"><span class="stat-value" id="stat-transit">0</span><span class="stat-label">in transit</span></div>
+    </div>
+
+    <section id="order-panel" class="panel">
+      <h3>Orders</h3>
+      <p id="order-hint" class="hint">Select one of your planets.</p>
+
+      <div id="build-box" class="hidden">
+        <div class="planet-head"><span class="dot" id="build-dot"></span><b id="build-name"></b></div>
+        <div class="field-row">
+          <div class="field">
+            <label for="build-count">Build ships</label>
+            <input id="build-count" type="number" min="1" value="10">
+          </div>
+          <button id="build-btn">Build</button>
+        </div>
+        <p class="hint" id="build-cost"></p>
+      </div>
+
+      <div id="send-box" class="hidden">
+        <div class="route-line">
+          <span class="dot" id="from-dot"></span><b id="from-name"></b>
+          <span class="arrow">&rarr;</span>
+          <span class="dot" id="to-dot"></span><b id="to-name"></b>
+        </div>
+        <p class="hint" id="route-info"></p>
+        <div class="field-row">
+          <div class="field">
+            <label for="send-count">Ships</label>
+            <input id="send-count" type="number" min="1" value="10">
+          </div>
+          <button id="send-btn" class="primary">Send</button>
+        </div>
+        <button id="clear-btn" class="link">clear selection</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3>Empires</h3>
+      <ul id="player-list" class="player-list"></ul>
+    </section>
+
+    <section class="panel grow">
+      <h3>Reports</h3>
+      <ul id="report-list" class="report-list"></ul>
+    </section>
+
+    <footer class="side-foot">
+      <button id="endturn-btn" class="primary big">End turn</button>
+      <span id="waiting" class="hint"></span>
+    </footer>
+  </aside>
+</main>
+
+<!-- ------------------------------------------------------- game lobby -->
+<section id="waitroom" class="overlay hidden">
+  <div class="dialog">
+    <h1 id="wait-name"></h1>
+    <p class="hint">Waiting for the game to start.</p>
+    <ul id="wait-players" class="player-list"></ul>
+    <button id="start-btn" class="primary">Start game</button>
+    <button id="wait-back" class="link">back to lobby</button>
+    <p id="wait-error" class="error"></p>
+  </div>
+</section>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
