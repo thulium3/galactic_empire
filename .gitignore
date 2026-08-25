@@ -6,3 +6,6 @@ gen/
 app/router/resources/
 mta_archives/
 .mta/
+app/router/default-env.json
+default-env.json
+*.mtar

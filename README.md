@@ -113,11 +113,11 @@ cf deploy mta_archives/galactic-empire_0.1.0.mtar
 ### Prerequisite: the HANA instance must be mapped to this space
 
 HDI containers can only be created in a space the HANA Cloud instance is mapped
-to. Ours (`hanadb`) lives in the space `hanadb`, so `galactic-empire` has to be
-added once:
+to. If the instance lives in a different space than the one you deploy to, add
+that space once:
 
-BTP Cockpit -> SAP HANA Cloud -> instance `hanadb` -> Manage Configuration ->
-Instance Mapping -> add org `Blackwyse GmbH`, space `galactic-empire` -> save.
+BTP Cockpit -> SAP HANA Cloud -> your instance -> Manage Configuration ->
+Instance Mapping -> add your org and target space -> save.
 
 This cannot be done from the CLI: `databaseMappings` is a provisioning-only
 parameter, so `cf update-service` is rejected. Without the mapping the deploy
