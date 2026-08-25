@@ -9,8 +9,13 @@ ES-module/SVG frontend - no build step, no runtime dependencies beyond CAP.
 npm install
 npm run deploy      # creates db.sqlite
 npm run watch       # http://localhost:4004
-npm test
+npm test            # backend: unit + service + event stream
+npm run test:ui     # browser smoke test, needs a running server
 ```
+
+`test:ui` drives the real UI in headless Chrome with **real mouse input** over the
+DevTools protocol. Synthetic `element.click()` does not exercise the same code
+path in the browser and has already missed one bug here - keep it that way.
 
 > The `cds` CLI must run on the same Node.js major version that built `better-sqlite3`.
 > If `cds` picks a different one, call it explicitly: `node $(which cds) deploy --to sqlite:db.sqlite`.

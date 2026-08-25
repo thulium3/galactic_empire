@@ -223,19 +223,29 @@ function render () {
   }
 }
 
+/** Full redraw - only after the data changed. */
 function drawMap () {
-  const byNumber = new Map(state.planets.map(p => [p.number, p]))
-  const origin = byNumber.get(state.selection.origin)
-  const targetNumber = state.selection.target ?? (state.hovered !== state.selection.origin ? state.hovered : null)
-  const target = byNumber.get(targetNumber)
-
   map.draw({
     planets: state.planets,
     fleets: state.fleets.map(f => ({ ...f, color: state.me.color })),
     currentTurn: state.game.currentTurn,
     selection: state.selection,
-    preview: origin && target ? { from: origin, to: target } : null
+    preview: currentPreview()
   })
+}
+
+function currentPreview () {
+  const byNumber = new Map(state.planets.map(p => [p.number, p]))
+  const origin = byNumber.get(state.selection.origin)
+  const targetNumber = state.selection.target ?? (state.hovered !== state.selection.origin ? state.hovered : null)
+  const target = byNumber.get(targetNumber)
+  return origin && target ? { from: origin, to: target } : null
+}
+
+/** Selection ring + preview line without rebuilding the map. */
+function updateSelectionVisuals () {
+  map.setSelection(state.selection)
+  map.setPreview(currentPreview())
 }
 
 function renderStats () {
@@ -291,24 +301,30 @@ function onPlanetClick (planet) {
 
   if (state.selection.origin === planet.number) {
     clearSelection()
-  } else if (state.selection.origin === null) {
+    return
+  }
+  if (state.selection.origin === null) {
     if (!planet.mine) return toast('You can only send ships from your own planets.')
     state.selection = { origin: planet.number, target: null }
   } else {
     state.selection.target = planet.number
   }
   renderOrderPanel()
-  drawMap()
+  updateSelectionVisuals()
 }
 
 function clearSelection () {
   state.selection = { origin: null, target: null }
   renderOrderPanel()
-  drawMap()
+  updateSelectionVisuals()
 }
 
 $('clear-btn').addEventListener('click', clearSelection)
-$('starmap').addEventListener('click', clearSelection)
+
+// Only a click on empty space clears - never one that landed on a planet.
+$('starmap').addEventListener('click', event => {
+  if (event.target === $('starmap')) clearSelection()
+})
 
 async function renderOrderPanel () {
   const byNumber = new Map(state.planets.map(p => [p.number, p]))
@@ -338,6 +354,8 @@ async function renderOrderPanel () {
   $('to-dot').style.background = target.color
   $('to-name').textContent = target.explored ? `#${target.number} ${target.name}` : `#${target.number}`
   $('send-count').max = origin.ships
+  // Never leave the field on a value the planet cannot supply.
+  $('send-count').value = Math.max(1, Math.min(Number($('send-count').value) || 1, origin.ships))
 
   try {
     const route = await api.route(state.game.ID, origin.number, target.number)
@@ -436,7 +454,7 @@ function showTooltip (planet, event) {
 
   tip.classList.remove('hidden')
   moveTooltip(planet, event)
-  if (state.selection.origin !== null && !state.selection.target) drawMap()
+  if (state.selection.origin !== null && !state.selection.target) map.setPreview(currentPreview())
 }
 
 function moveTooltip (planet, event) {
@@ -453,7 +471,7 @@ function moveTooltip (planet, event) {
 function hideTooltip () {
   state.hovered = null
   $('tooltip').classList.add('hidden')
-  if (state.selection.origin !== null && !state.selection.target) drawMap()
+  if (state.selection.origin !== null && !state.selection.target) map.setPreview(currentPreview())
 }
 
 // --------------------------------------------------------------- clock

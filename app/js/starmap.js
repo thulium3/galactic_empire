@@ -84,12 +84,33 @@ export class StarMap {
     }))
   }
 
-  /** Full redraw - at 99 planets this is cheaper than diffing. */
+  /**
+   * Full redraw - at 99 planets this is cheaper than diffing.
+   *
+   * Only call this when the data actually changed. Rebuilding the planet nodes
+   * while the pointer is over one of them destroys the element the browser is
+   * about to fire `click` on, and the click is lost. Selection highlight and
+   * route preview therefore have their own methods below.
+   */
   draw ({ planets, fleets = [], currentTurn = 1, selection = {}, preview = null }) {
     this.#drawFleetRoutes(fleets, planets)
     this.#drawPreview(preview)
     this.#drawPlanets(planets, selection)
     this.#drawFleets(fleets, planets, currentTurn)
+  }
+
+  /** Highlight only - toggles classes, never touches the node tree. */
+  setSelection (selection = {}) {
+    for (const node of this.#layers.planets.children) {
+      const number = Number(node.dataset.number)
+      node.classList.toggle('selected', number === selection.origin)
+      node.classList.toggle('target', number === selection.target)
+    }
+  }
+
+  /** Route preview only - safe to call from hover handlers. */
+  setPreview (preview) {
+    this.#drawPreview(preview)
   }
 
   #drawPlanets (planets, selection) {
@@ -110,6 +131,7 @@ export class StarMap {
       for (const [dx, dy] of this.#wrapOffsets(planet, radius)) {
         const group = el('g', {
           class: classes.join(' ') + (dx || dy ? ' ghost' : ''),
+          'data-number': planet.number,
           transform: `translate(${planet.x + dx} ${planet.y + dy})`
         })
         group.append(el('circle', { class: 'planet-body', r: radius, fill: planet.color }))

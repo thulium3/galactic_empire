@@ -18,7 +18,8 @@
     "start": "cds-serve",
     "watch": "cds watch",
     "test": "node --test \"test/*.test.js\"",
-    "deploy": "cds deploy --to sqlite:db.sqlite"
+    "deploy": "cds deploy --to sqlite:db.sqlite",
+    "test:ui": "node test/ui-smoke.mjs"
   },
   "cds": {
     "requires": {
