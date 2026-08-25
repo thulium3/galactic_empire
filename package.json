@@ -7,12 +7,15 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@cap-js/hana": "^2",
     "@sap/cds": "^9",
-    "@cap-js/sqlite": "^2",
+    "@sap/xssec": "^4",
     "express": "^4"
   },
   "devDependencies": {
-    "@cap-js/cds-test": "^0"
+    "@cap-js/cds-test": "^0",
+    "@sap/cds-dk": "^10",
+    "@cap-js/sqlite": "^2"
   },
   "scripts": {
     "start": "cds-serve",
@@ -24,9 +27,11 @@
   "cds": {
     "requires": {
       "db": {
-        "kind": "sqlite",
-        "credentials": {
-          "url": "db.sqlite"
+        "[development]": {
+          "kind": "sqlite",
+          "credentials": {
+            "url": "db.sqlite"
+          }
         }
       },
       "auth": {
@@ -60,9 +65,14 @@
               ]
             }
           }
-        },
-        "[production]": {
+        }
+      },
+      "[production]": {
+        "auth": {
           "kind": "xsuaa"
+        },
+        "db": {
+          "kind": "hana"
         }
       }
     },

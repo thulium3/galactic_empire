@@ -1,0 +1,32 @@
+{
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.player",
+      "description": "Play the game: join, send fleets, build ships"
+    },
+    {
+      "name": "$XSAPPNAME.gamemaster",
+      "description": "Start any game, regardless of who created it"
+    }
+  ],
+  "attributes": [],
+  "role-templates": [
+    {
+      "name": "player",
+      "description": "Player",
+      "scope-references": [
+        "$XSAPPNAME.player"
+      ],
+      "attribute-references": []
+    },
+    {
+      "name": "gamemaster",
+      "description": "Game master",
+      "scope-references": [
+        "$XSAPPNAME.player",
+        "$XSAPPNAME.gamemaster"
+      ],
+      "attribute-references": []
+    }
+  ]
+}

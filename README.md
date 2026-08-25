@@ -102,6 +102,60 @@ events.addEventListener('turnResolved', e => render(JSON.parse(e.data)))
 events.addEventListener('report', e => showReports(JSON.parse(e.data).messages))
 ```
 
+## Deployment to SAP BTP (Cloud Foundry)
+
+```bash
+cf login                     # target the galactic-empire space
+mbt build -p=cf
+cf deploy mta_archives/galactic-empire_0.1.0.mtar
+```
+
+### Prerequisite: the HANA instance must be mapped to this space
+
+HDI containers can only be created in a space the HANA Cloud instance is mapped
+to. Ours (`hanadb`) lives in the space `hanadb`, so `galactic-empire` has to be
+added once:
+
+BTP Cockpit -> SAP HANA Cloud -> instance `hanadb` -> Manage Configuration ->
+Instance Mapping -> add org `Blackwyse GmbH`, space `galactic-empire` -> save.
+
+This cannot be done from the CLI: `databaseMappings` is a provisioning-only
+parameter, so `cf update-service` is rejected. Without the mapping the deploy
+fails with *"There is no database available"*.
+
+The MTA creates three modules and two services:
+
+| Part | Purpose |
+|---|---|
+| `galactic-empire-srv` | CAP backend, HANA-backed |
+| `galactic-empire-db-deployer` | HDI deployer for the schema |
+| `galactic-empire` | approuter - authentication plus the static web client |
+| `galactic-empire-auth` | XSUAA, scopes `player` and `gamemaster` |
+| `galactic-empire-db` | HDI container (`hana / hdi-shared`) |
+
+**Assign a role collection before first use.** XSUAA hands out no scopes by
+default, so without this every request answers 403:
+
+BTP Cockpit -> Security -> Users -> your user -> assign
+*Galactic Empire Player (org-space)*, or *Galactic Empire Game Master (org-space)*
+to also start games created by others. Log out and back in for the new scopes
+to reach the token.
+
+### Things that would break if changed
+
+- **`instances: 1` is mandatory.** The turn timer and the SSE event bus live in
+  the process. A second instance would resolve the same turn twice and only
+  reach the players connected to it. Scaling out needs a Redis-backed bus and a
+  single scheduler - see `srv/lib/event-bus.js` and `srv/lib/turn-timer.js`.
+- **Destination timeout 3600000.** The approuter otherwise cuts the open
+  `/events` response after its 30s default and the client reconnect-loops.
+- **CSRF.** The approuter protects unsafe methods; the client fetches and
+  refreshes the token itself (`app/js/api.js`). `/events` is exempt - it is a GET.
+- **Auth differs by environment.** Locally the client sends basic auth against
+  CAP's mocked users. Behind the approuter it must not send an `Authorization`
+  header at all - the session carries the identity. The client detects which one
+  it is via `/user-api/currentUser`, which only the approuter serves.
+
 ## Frontend
 
 Open <http://localhost:4004/> - plain ES modules and SVG, no build step, served

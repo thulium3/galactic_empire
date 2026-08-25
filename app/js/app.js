@@ -1,6 +1,6 @@
 'use strict'
 
-import { api, login, logout, user, openEventStream, ApiError } from './api.js'
+import { api, login, logout, user, useSessionAuth, isSessionAuth, currentApprouterUser, openEventStream, ApiError } from './api.js'
 import { StarMap } from './starmap.js'
 
 const $ = id => document.getElementById(id)
@@ -57,6 +57,10 @@ $('login-btn').addEventListener('click', async () => {
 $('login-user').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click() })
 
 $('logout-btn').addEventListener('click', () => {
+  if (isSessionAuth()) {
+    window.location.href = '/logout' // the approuter ends the session for us
+    return
+  }
   leaveGame()
   logout()
   show('login')
@@ -530,4 +534,23 @@ const streamHandlers = {
   error: err => toast(`connection lost: ${errorText(err)} - retrying`, true)
 }
 
-show('login')
+/**
+ * Behind the approuter the user is already authenticated, so the dev login
+ * screen is skipped. Locally `/user-api/currentUser` does not exist and we
+ * fall back to picking a mocked user.
+ */
+async function boot () {
+  const identity = await currentApprouterUser()
+  if (!identity) return show('login')
+
+  useSessionAuth(identity)
+  $('logout-btn').textContent = 'log out'
+  try {
+    await openLobby()
+  } catch (err) {
+    show('login')
+    $('login-error').textContent = errorText(err)
+  }
+}
+
+boot()

@@ -3,3 +3,6 @@ db.sqlite
 gen/
 .env
 *.log
+app/router/resources/
+mta_archives/
+.mta/

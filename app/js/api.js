@@ -2,20 +2,54 @@
 
 const ODATA = '/odata/v4/game'
 
-let authHeader = null
+let authHeader = null      // dev only: mocked basic auth
+let sessionAuth = false    // production: identity comes from the approuter
 let currentUser = null
+let csrfToken = null
 
+/** Dev login against CAP's mocked users. */
 export function login (user) {
   currentUser = user
+  sessionAuth = false
   authHeader = 'Basic ' + btoa(`${user}:`)
+}
+
+/**
+ * Production: the approuter already authenticated the request and forwards a
+ * JWT. We must not send an Authorization header of our own - the session
+ * cookie carries the identity.
+ */
+export function useSessionAuth (name) {
+  currentUser = name
+  sessionAuth = true
+  authHeader = null
 }
 
 export function logout () {
   currentUser = null
   authHeader = null
+  sessionAuth = false
+  csrfToken = null
 }
 
 export const user = () => currentUser
+export const isSessionAuth = () => sessionAuth
+
+/**
+ * Asks the approuter who is logged in. Only exists behind the approuter, so a
+ * failure here simply means we are running locally.
+ */
+export async function currentApprouterUser () {
+  try {
+    const response = await fetch('/user-api/currentUser', { headers: { Accept: 'application/json' } })
+    if (!response.ok) return null
+    const info = await response.json()
+    const name = [info.firstname, info.lastname].filter(Boolean).join(' ')
+    return name || info.name || info.email || null
+  } catch {
+    return null
+  }
+}
 
 export class ApiError extends Error {
   constructor (status, message) {
@@ -24,16 +58,40 @@ export class ApiError extends Error {
   }
 }
 
-async function call (path, { method = 'GET', body } = {}) {
+const authHeaders = () => (authHeader ? { Authorization: authHeader } : {})
+
+/** The approuter rejects unsafe methods without a matching CSRF token. */
+async function ensureCsrfToken (force = false) {
+  if (!sessionAuth) return null
+  if (csrfToken && !force) return csrfToken
+  const response = await fetch(`${ODATA}/`, {
+    headers: { ...authHeaders(), Accept: 'application/json', 'x-csrf-token': 'fetch' }
+  })
+  csrfToken = response.headers.get('x-csrf-token')
+  return csrfToken
+}
+
+async function call (path, { method = 'GET', body, retry = true } = {}) {
+  const unsafe = method !== 'GET'
+  const token = unsafe ? await ensureCsrfToken() : null
+
   const response = await fetch(path, {
     method,
     headers: {
-      Authorization: authHeader,
+      ...authHeaders(),
       Accept: 'application/json',
-      ...(body ? { 'Content-Type': 'application/json' } : {})
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { 'x-csrf-token': token } : {})
     },
     body: body ? JSON.stringify(body) : undefined
   })
+
+  // A stale token after a session refresh: fetch a new one and try once more.
+  if (response.status === 403 && unsafe && retry &&
+      (response.headers.get('x-csrf-token') ?? '').toLowerCase() === 'required') {
+    await ensureCsrfToken(true)
+    return call(path, { method, body, retry: false })
+  }
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`
@@ -89,7 +147,7 @@ export function openEventStream (game, handlers) {
       try {
         controller = new AbortController()
         const response = await fetch(`/events?game=${game}`, {
-          headers: { Authorization: authHeader, Accept: 'text/event-stream' },
+          headers: { ...authHeaders(), Accept: 'text/event-stream' },
           signal: controller.signal
         })
         if (!response.ok) throw new ApiError(response.status, `event stream refused (${response.status})`)

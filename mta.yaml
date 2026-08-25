@@ -1,0 +1,113 @@
+_schema-version: 3.3.0
+ID: galactic-empire
+version: 0.1.0
+description: "Galactic Empire - turn-based multiplayer space conquest"
+parameters:
+  enable-parallel-deployments: true
+
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
+
+modules:
+  # ---------------------------------------------------------------- backend
+  - name: galactic-empire-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      # Must stay at 1: the turn timer and the SSE event bus are in-process.
+      # More instances would resolve the same turn twice and split the event
+      # fan-out. Scaling out requires a Redis-backed bus and a single scheduler.
+      instances: 1
+      buildpack: nodejs_buildpack
+      memory: 512M
+      disk-quota: 1024M
+    build-parameters:
+      builder: npm-ci
+    provides:
+      - name: srv-api # required by consumers of CAP services (e.g. approuter)
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: galactic-empire-auth
+      - name: galactic-empire-db
+
+  # ------------------------------------------------------------ hdi deployer
+  - name: galactic-empire-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+    requires:
+      - name: galactic-empire-db
+
+  # ------------------------------------------------- approuter + static app
+  - name: galactic-empire
+    type: approuter.nodejs
+    path: app/router
+    parameters:
+      keep-existing-routes: true
+      disk-quota: 256M
+      memory: 256M
+    build-parameters:
+      # The web client lives in app/ and is copied in at build time, so the
+      # sources stay in one place and `cds watch` keeps serving them directly.
+      builder: custom
+      commands:
+        - rm -rf resources
+        - mkdir -p resources
+        - cp -R ../index.html ../styles.css ../js resources/
+      ignore: ["node_modules/", "default-env.json"]
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          name: srv-api # must be used in xs-app.json as well
+          url: ~{srv-url}
+          forwardAuthToken: true
+          # Server-Sent Events hold the response open. Without this the router
+          # cuts /events after its 30s default and the client reconnect-loops.
+          timeout: 3600000
+      - name: galactic-empire-auth
+    provides:
+      - name: app-api
+        properties:
+          app-protocol: ${protocol}
+          app-uri: ${default-uri}
+
+resources:
+  - name: galactic-empire-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      config:
+        xsappname: galactic-empire
+        tenant-mode: dedicated
+        oauth2-configuration:
+          credential-types:
+            - "binding-secret"
+            - "x509"
+          redirect-uris:
+            - https://*~{app-api/app-uri}/**
+        role-collections:
+          - name: 'Galactic Empire Player'
+            description: 'Play Galactic Empire'
+            role-template-references:
+              - '$XSAPPNAME.player'
+          - name: 'Galactic Empire Game Master'
+            description: 'Play and start any game'
+            role-template-references:
+              - '$XSAPPNAME.gamemaster'
+    requires:
+      - name: app-api
+
+  - name: galactic-empire-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
