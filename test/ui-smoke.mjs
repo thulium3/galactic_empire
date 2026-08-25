@@ -58,7 +58,7 @@ const asUser = (path, body, who) => fetch(`${APP}/odata/v4/game/${path}`, {
 console.log('setting up a game')
 const game = (await asUser('createGame', {
   name: `UI smoke ${Date.now()}`, planetCount: 40, maxPlayers: 2,
-  turnLimitSec: 3600, shipSpeed: 200, mapWidth: 1600, mapHeight: 900
+  turnLimitSec: 3600, shipSpeed: 200, mapWidth: 1600, mapHeight: 900, seed: 20260101
 }, 'alice')).value
 await asUser('joinGame', { game, name: 'bob' }, 'bob')
 await asUser('startGame', { game }, 'alice')
@@ -146,22 +146,23 @@ await sleep(2500)
 
 check('star map rendered', await evaluate(`document.querySelectorAll('#starmap .planet').length > 0`), true)
 
-const own = await centerOf('#starmap .planet.mine')
+const own = await centerOf('#starmap .planet.mine:not(.ghost)')
 await realClick(own.x, own.y)
-check('own planet selected', await evaluate(`document.querySelectorAll('#starmap .planet.selected').length`), 1)
+check('own planet selected', await evaluate(`document.querySelectorAll('#starmap .planet.selected:not(.ghost)').length`), 1)
 check('build panel opened', await evaluate(`!document.getElementById('build-box').classList.contains('hidden')`), true)
 
 // The regression: a second real click must register as the destination.
 const dest = await evaluate(`
   (() => {
-    const mine = document.querySelector('#starmap .planet.mine')
-    const other = [...document.querySelectorAll('#starmap .planet')]
-      .find(p => p !== mine && !p.classList.contains('ghost'))
+    const mine = document.querySelector('#starmap .planet.mine:not(.ghost)')
+    const mineNum = mine.dataset.number
+    const other = [...document.querySelectorAll('#starmap .planet:not(.ghost)')]
+      .find(p => p.dataset.number !== mineNum)
     const b = other.getBoundingClientRect()
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 }
   })()`)
 await realClick(dest.x, dest.y)
-check('destination selected', await evaluate(`document.querySelectorAll('#starmap .planet.target').length`), 1)
+check('destination selected', await evaluate(`document.querySelectorAll('#starmap .planet.target:not(.ghost)').length`), 1)
 check('send panel opened', await evaluate(`!document.getElementById('send-box').classList.contains('hidden')`), true)
 check('ship count is bounded by the garrison', await evaluate(`
   (async () => {

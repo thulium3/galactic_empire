@@ -2,7 +2,17 @@
   "welcomeFile": "/index.html",
   "authenticationMethod": "route",
   "sessionTimeout": 240,
+  "logout": {
+    "logoutEndpoint": "/logout",
+    "logoutPage": "/"
+  },
   "routes": [
+    {
+      "source": "^/user-api(.*)$",
+      "target": "$1",
+      "service": "sap-approuter-userapi",
+      "authenticationType": "xsuaa"
+    },
     {
       "source": "^/odata/(.*)$",
       "target": "/odata/$1",

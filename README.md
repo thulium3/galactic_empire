@@ -136,10 +136,19 @@ The MTA creates three modules and two services:
 **Assign a role collection before first use.** XSUAA hands out no scopes by
 default, so without this every request answers 403:
 
-BTP Cockpit -> Security -> Users -> your user -> assign
-*Galactic Empire Player (org-space)*, or *Galactic Empire Game Master (org-space)*
-to also start games created by others. Log out and back in for the new scopes
-to reach the token.
+BTP Cockpit -> Security -> Users -> your user -> assign *Galactic Empire Player*,
+or *Galactic Empire Game Master* to also start games created by others.
+
+Assign it in **every identity provider the user can log on with**. This
+subaccount has two (`sap.custom` for logon, `sap.default` disabled for it) - a
+collection granted only in the unused one has no effect.
+
+**Then log out and back in.** Scopes are written into the token at login; a role
+granted afterwards does not reach an existing token, and the approuter session
+holds that token for `sessionTimeout` (240 min). `/logout` clears it - which is
+why `xs-app.json` must declare a `logout` endpoint. Without that declaration
+`/logout` is not a route at all: it falls through to the static catch-all,
+returns 404, and the stale session survives. A private window works too.
 
 ### Things that would break if changed
 
@@ -149,8 +158,18 @@ to reach the token.
   single scheduler - see `srv/lib/event-bus.js` and `srv/lib/turn-timer.js`.
 - **Destination timeout 3600000.** The approuter otherwise cuts the open
   `/events` response after its 30s default and the client reconnect-loops.
+- **`/user-api` must be routed before the static catch-all.** The approuter's
+  user API is how the client knows it is running behind a router; if the
+  catch-all claims it first, the router looks for a file, returns 404, and the
+  client concludes it runs locally - and then sends no CSRF token, so every POST
+  answers 403 while GETs still work.
 - **CSRF.** The approuter protects unsafe methods; the client fetches and
-  refreshes the token itself (`app/js/api.js`). `/events` is exempt - it is a GET.
+  refreshes the token itself (`app/js/api.js`), and does so regardless of which
+  environment it thinks it is in, so a wrong guess cannot break every POST.
+  `/events` is exempt - it is a GET.
+- **Never probe a protected path to detect the environment.** CAP answers 401
+  with `WWW-Authenticate: Basic`, and the browser turns that into a modal login
+  dialog that swallows every mouse event on the page - the app looks frozen.
 - **Auth differs by environment.** Locally the client sends basic auth against
   CAP's mocked users. Behind the approuter it must not send an `Authorization`
   header at all - the session carries the identity. The client detects which one

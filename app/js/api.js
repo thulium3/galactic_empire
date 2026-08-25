@@ -36,16 +36,26 @@ export const user = () => currentUser
 export const isSessionAuth = () => sessionAuth
 
 /**
- * Asks the approuter who is logged in. Only exists behind the approuter, so a
- * failure here simply means we are running locally.
+ * Decides how we authenticate.
+ *
+ * We ask the approuter's user API, and *only* that: it answers 404 when it is
+ * not there, which is harmless. Probing a protected OData path instead would
+ * earn a 401 with `WWW-Authenticate: Basic`, and the browser answers that with
+ * a modal login dialog that swallows every mouse event on the page.
+ *
+ * If this misfires we fall back to the dev login, which still works behind the
+ * approuter - the session carries the identity and `ensureCsrfToken` runs
+ * regardless of what we concluded here.
+ *
+ * Returns null when the dev login is needed, else `{ name }` (name may be null).
  */
-export async function currentApprouterUser () {
+export async function detectSession () {
   try {
     const response = await fetch('/user-api/currentUser', { headers: { Accept: 'application/json' } })
     if (!response.ok) return null
     const info = await response.json()
-    const name = [info.firstname, info.lastname].filter(Boolean).join(' ')
-    return name || info.name || info.email || null
+    const name = [info.firstname, info.lastname].filter(Boolean).join(' ') || info.name || info.email || null
+    return { name }
   } catch {
     return null
   }
@@ -60,9 +70,12 @@ export class ApiError extends Error {
 
 const authHeaders = () => (authHeader ? { Authorization: authHeader } : {})
 
-/** The approuter rejects unsafe methods without a matching CSRF token. */
+/**
+ * The approuter rejects unsafe methods without a matching CSRF token. We always
+ * try to fetch one: where nothing hands one out (local dev) we send none, so a
+ * wrong guess about the environment cannot break every POST.
+ */
 async function ensureCsrfToken (force = false) {
-  if (!sessionAuth) return null
   if (csrfToken && !force) return csrfToken
   const response = await fetch(`${ODATA}/`, {
     headers: { ...authHeaders(), Accept: 'application/json', 'x-csrf-token': 'fetch' }

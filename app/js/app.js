@@ -1,6 +1,6 @@
 'use strict'
 
-import { api, login, logout, user, useSessionAuth, isSessionAuth, currentApprouterUser, openEventStream, ApiError } from './api.js'
+import { api, login, logout, user, useSessionAuth, isSessionAuth, detectSession, openEventStream, ApiError } from './api.js'
 import { StarMap } from './starmap.js'
 
 const $ = id => document.getElementById(id)
@@ -38,7 +38,16 @@ function toast (message, bad = false) {
   toast.timer = setTimeout(() => node.classList.add('hidden'), 4000)
 }
 
-const errorText = err => (err instanceof ApiError ? err.message : String(err?.message ?? err))
+const errorText = err => {
+  if (err instanceof ApiError && err.status === 403 && /lacking required roles/i.test(err.message)) {
+    // The role collection is assigned but the scope is missing from the token:
+    // scopes are baked in at login, so a role granted afterwards needs a new one.
+    return isSessionAuth()
+      ? 'Your session predates your role assignment. Log out and back in to refresh the token.'
+      : err.message
+  }
+  return err instanceof ApiError ? err.message : String(err?.message ?? err)
+}
 
 // ----------------------------------------------------------------- login
 
@@ -72,7 +81,7 @@ async function openLobby () {
   leaveGame()
   // Membership comes from MyPlayers - the display name may differ from the login.
   const [games, joined] = await Promise.all([api.openGames(), api.myGames()])
-  $('lobby-user').textContent = user()
+  $('lobby-user').textContent = user() ?? 'signed in'
   $('login-error').textContent = ''
   $('lobby-error').textContent = ''
   renderGameList(games, joined)
@@ -107,7 +116,7 @@ function renderGameList (games, joined) {
     button.addEventListener('click', async () => {
       button.disabled = true
       try {
-        if (!mine) await api.joinGame(game.ID, user())
+        if (!mine) await api.joinGame(game.ID, user() ?? undefined)
         await enterGame(game.ID)
       } catch (err) {
         $('lobby-error').textContent = errorText(err)
@@ -540,16 +549,20 @@ const streamHandlers = {
  * fall back to picking a mocked user.
  */
 async function boot () {
-  const identity = await currentApprouterUser()
-  if (!identity) return show('login')
+  const session = await detectSession()
+  if (!session) return show('login')
 
-  useSessionAuth(identity)
+  useSessionAuth(session.name) // may be null - the server knows who we are anyway
   $('logout-btn').textContent = 'log out'
   try {
     await openLobby()
   } catch (err) {
     show('login')
     $('login-error').textContent = errorText(err)
+    if (err instanceof ApiError && err.status === 403) {
+      $('login-btn').textContent = 'Log out and sign in again'
+      $('login-btn').onclick = () => { window.location.href = '/logout' }
+    }
   }
 }
 
