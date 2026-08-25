@@ -25,7 +25,7 @@ const STAR_NAMES = [
 /** Kiel institutions - clubs, pubs and beer gardens. */
 const KIEL_VENUES = [
   'Die Pumpe',
-  'Traum GmbH',
+  'Traumfabrik',
   'Max',
   'Räucherei',
   'Alte Meierei',
