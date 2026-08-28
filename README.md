@@ -2,10 +2,10 @@
 
 Turn-based multiplayer space conquest. SAP CAP (Node.js) backend, plain
 ES-module/SVG frontend - no build step, no runtime dependencies beyond CAP.
+Built using Claude AI.
 
 ## Prerequisites
 For local setup, only current version of Node.js. 
-For deployment to BTP, just build it locally and run 'cds up'.
 
 ## Setup
 
@@ -112,8 +112,7 @@ events.addEventListener('report', e => showReports(JSON.parse(e.data).messages))
 
 ```bash
 cf login                     # target the galactic-empire space
-mbt build -p=cf
-cf deploy mta_archives/galactic-empire_0.1.0.mtar
+cds up
 ```
 
 ### Prerequisite: the HANA instance must be mapped to this space
