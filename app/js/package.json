@@ -1,0 +1,4 @@
+{
+  "//": "The browser modules are ESM. Only here so node's test runner can import them without reparsing.",
+  "type": "module"
+}

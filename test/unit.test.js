@@ -96,3 +96,44 @@ test('home planets are spread out, native free and equally productive', () => {
     }
   }
 })
+
+/**
+ * HANA hands out DECIMAL as a JSON string to keep full precision, sqlite does
+ * not. `"1188.84" + 230.74` then concatenates instead of adding and the SVG
+ * drops the route line to 0/0 - visible only on BTP, never locally.
+ */
+test('the client turns OData decimals into numbers', async () => {
+  const responses = new Map()
+  const original = globalThis.fetch
+
+  globalThis.fetch = async url => {
+    const body = [...responses].find(([path]) => String(url).includes(path))?.[1] ?? {}
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => body
+    }
+  }
+
+  try {
+    const { api } = await import('../app/js/api.js')
+
+    responses.set('starMap', { value: [{ number: 1, x: '1188.84', y: '95.75' }] })
+    const [planet] = await api.starMap('g')
+    assert.equal(typeof planet.x, 'number')
+    assert.equal(planet.x, 1188.84)
+    assert.equal(planet.y, 95.75)
+
+    responses.set('route', { distance: '230.74', turns: 2 })
+    assert.equal((await api.route('g', 1, 2)).distance, 230.74)
+
+    responses.set('MyFleets', { value: [{ ID: 'f', ships: 7, distance: '12.50' }] })
+    assert.equal((await api.fleets('g'))[0].distance, 12.5)
+
+    responses.set('Games(', { ID: 'g', shipSpeed: '120.00' })
+    assert.equal((await api.game('g')).shipSpeed, 120)
+  } finally {
+    globalThis.fetch = original
+  }
+})

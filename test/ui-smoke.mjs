@@ -164,6 +164,18 @@ const dest = await evaluate(`
 await realClick(dest.x, dest.y)
 check('destination selected', await evaluate(`document.querySelectorAll('#starmap .planet.target:not(.ghost)').length`), 1)
 check('send panel opened', await evaluate(`!document.getElementById('send-box').classList.contains('hidden')`), true)
+
+// OData serializes decimals as strings; `x + dx` then concatenates and the SVG
+// silently drops the line to 0/0 - a route pointing at the top left corner.
+check('route preview coordinates are numeric', await evaluate(`
+  (() => {
+    const lines = [...document.querySelectorAll('#starmap line')]
+    if (!lines.length) return 'no route line drawn'
+    const bad = lines.flatMap(l => ['x1', 'y1', 'x2', 'y2']
+      .map(a => [a, l.getAttribute(a)])
+      .filter(([, v]) => !Number.isFinite(Number(v))))
+    return bad.length ? JSON.stringify(bad) : 'ok'
+  })()`), 'ok')
 check('ship count is bounded by the garrison', await evaluate(`
   (async () => {
     const res = await fetch('/odata/v4/game/starMap(game=' + document.body.dataset.game + ')',

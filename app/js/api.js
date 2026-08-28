@@ -126,10 +126,20 @@ const fn = (name, params) => {
 
 const list = (entity, query) => call(`${ODATA}/${entity}?${query}`).then(r => r.value)
 
+/**
+ * OData v4 serializes `Decimal` as a JSON *string* to keep full precision.
+ * Everything downstream does arithmetic with these values, where a string
+ * silently concatenates instead of adding, so they are coerced right here at
+ * the boundary. Never let a raw decimal escape into the view layer.
+ */
+const num = value => (value === null || value === undefined ? value : Number(value))
+
+const planetCoords = planet => ({ ...planet, x: num(planet.x), y: num(planet.y) })
+
 export const api = {
   // lobby
   openGames: () => list('Games', "$filter=status ne 'FINISHED'&$expand=players($select=name,color)&$orderby=createdAt desc"),
-  game: id => call(`${ODATA}/Games(${id})`),
+  game: id => call(`${ODATA}/Games(${id})`).then(g => ({ ...g, shipSpeed: num(g.shipSpeed) })),
   participants: game => list('Participants', `$filter=game_ID eq ${game}&$orderby=createdAt`),
   /** The caller's games plus the principal id behind them - needed to spot own games. */
   myGames: () => list('MyPlayers', '$select=game_ID,user').then(rows => ({
@@ -143,9 +153,11 @@ export const api = {
 
   // in game
   me: game => list('MyPlayers', `$filter=game_ID eq ${game}`).then(rows => rows[0] ?? null),
-  starMap: game => fn('starMap', { game }).then(r => r.value),
-  route: (game, origin, destination) => fn('route', { game, origin, destination }),
-  fleets: game => list('MyFleets', `$filter=game_ID eq ${game}&$orderby=arrivalTurn`),
+  starMap: game => fn('starMap', { game }).then(r => r.value.map(planetCoords)),
+  route: (game, origin, destination) => fn('route', { game, origin, destination })
+    .then(r => ({ ...r, distance: num(r.distance) })),
+  fleets: game => list('MyFleets', `$filter=game_ID eq ${game}&$orderby=arrivalTurn`)
+    .then(rows => rows.map(f => ({ ...f, distance: num(f.distance) }))),
   reports: game => list('MyMessages', `$filter=game_ID eq ${game}&$orderby=turn desc&$top=60`),
   sendFleet: (game, origin, destination, ships) => action('sendFleet', { game, origin, destination, ships }),
   buildShips: (game, planet, ships) => action('buildShips', { game, planet, ships }).then(r => r.value),
