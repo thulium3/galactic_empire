@@ -14,6 +14,7 @@ module.exports = class GameService extends cds.ApplicationService {
     this.on('createGame', req => this.onCreateGame(req))
     this.on('joinGame', req => this.onJoinGame(req))
     this.on('startGame', req => this.onStartGame(req))
+    this.on('deleteGame', req => this.onDeleteGame(req))
     this.on('sendFleet', req => this.onSendFleet(req))
     this.on('buildShips', req => this.onBuildShips(req))
     this.on('endTurn', req => this.onEndTurn(req))
@@ -169,6 +170,38 @@ module.exports = class GameService extends cds.ApplicationService {
       turnDeadline,
       players: players.map(p => ({ name: p.name, color: p.color }))
     })
+    return true
+  }
+
+  /**
+   * Wipes a game and all its dependents. Works in every status - a running
+   * game is abandoned, not finished. Only the creator or a gamemaster may do
+   * this, and there is no undo.
+   */
+  async onDeleteGame (req) {
+    const { Games, Players, Planets, PlanetIntel, Fleets, Messages } = cds.entities('galactic')
+    const game = await this.loadGame(req)
+    if (!game) return
+
+    if (game.createdBy !== req.user.id && !req.user.is('gamemaster')) {
+      return req.reject(403, 'Only the game creator can delete this game')
+    }
+
+    const players = await SELECT.from(Players).columns('ID').where({ game_ID: game.ID })
+    const playerIds = players.map(p => p.ID)
+
+    // Children first, then the game: the associations are not all compositions,
+    // so we cannot rely on a cascading deep delete here.
+    await DELETE.from(Messages).where({ game_ID: game.ID })
+    await DELETE.from(Fleets).where({ game_ID: game.ID })
+    if (playerIds.length) await DELETE.from(PlanetIntel).where({ player_ID: playerIds })
+    await DELETE.from(Planets).where({ game_ID: game.ID })
+    // The winner reference points at a player we are about to remove.
+    if (game.winner_ID) await UPDATE(Games, game.ID).with({ winner_ID: null })
+    await DELETE.from(Players).where({ game_ID: game.ID })
+    await DELETE.from(Games).where({ ID: game.ID })
+
+    publish(game.ID, 'gameDeleted', { game: game.ID, name: game.name })
     return true
   }
 

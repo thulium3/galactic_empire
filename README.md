@@ -55,6 +55,7 @@ Base path `/odata/v4/game`, all endpoints require role `player`.
 | `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `seed` | game UUID (creator joins automatically) |
 | `joinGame` | `game`, `name` | player UUID |
 | `startGame` | `game` | `true` - creator or `gamemaster` only |
+| `deleteGame` | `game` | `true` - creator or `gamemaster` only, any status, no undo |
 | `sendFleet` | `game`, `origin`, `destination`, `ships` | fleet info incl. `arrivalTurn` |
 | `buildShips` | `game`, `planet`, `ships` | remaining resources |
 | `endTurn` | `game` | `{turn, resolved, finished, waitingFor}` |
@@ -91,6 +92,7 @@ Heartbeat every 25s, browser reconnect hint `retry: 3000`.
 | `playerReady` | everyone | who ended their turn, `waitingFor` |
 | `turnResolved` | everyone | new `turn`, `turnDeadline`, `finished`, `winner`, player states |
 | `report` | one player | that player's turn messages incl. `planetNumber`, `kind`, `text` |
+| `gameDeleted` | everyone | `game`, `name` - the client returns to the lobby |
 
 Events are queued and only dispatched after the transaction commits, so a client
 never sees state a rollback would take back. `MyMessages` stays the fallback for

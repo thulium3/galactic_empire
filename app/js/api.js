@@ -131,10 +131,15 @@ export const api = {
   openGames: () => list('Games', "$filter=status ne 'FINISHED'&$expand=players($select=name,color)&$orderby=createdAt desc"),
   game: id => call(`${ODATA}/Games(${id})`),
   participants: game => list('Participants', `$filter=game_ID eq ${game}&$orderby=createdAt`),
-  myGames: () => list('MyPlayers', '$select=game_ID').then(rows => new Set(rows.map(r => r.game_ID))),
+  /** The caller's games plus the principal id behind them - needed to spot own games. */
+  myGames: () => list('MyPlayers', '$select=game_ID,user').then(rows => ({
+    games: new Set(rows.map(r => r.game_ID)),
+    user: rows[0]?.user ?? null
+  })),
   createGame: settings => action('createGame', settings).then(r => r.value),
   joinGame: (game, name) => action('joinGame', { game, name }).then(r => r.value),
   startGame: game => action('startGame', { game }).then(r => r.value),
+  deleteGame: game => action('deleteGame', { game }).then(r => r.value),
 
   // in game
   me: game => list('MyPlayers', `$filter=game_ID eq ${game}`).then(rows => rows[0] ?? null),

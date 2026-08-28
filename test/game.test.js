@@ -155,3 +155,47 @@ test('the turn timer resolves a game after its deadline', async () => {
   stopTurnTimer()
   assert.equal(startTurnTimer, startTurnTimer) // keep require side effects explicit
 })
+
+test('a running game can be deleted by its creator only, and takes its data with it', async () => {
+  const { Games, Players, Planets, Fleets, Messages } = cds.entities('galactic')
+
+  const game = (await post('/createGame', {
+    name: 'Doomed', planetCount: 8, maxPlayers: 2, turnLimitSec: 3600, seed: 11
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const home = (await fn('starMap', { game }, 'alice')).value.find(p => p.mine)
+  const target = (await fn('starMap', { game }, 'alice')).value.find(p => p.number !== home.number)
+  await post('/sendFleet', { game, origin: home.number, destination: target.number, ships: 5 }, 'alice')
+
+  await assert.rejects(() => post('/deleteGame', { game }, 'bob'), /creator/)
+  await assert.rejects(() => post('/deleteGame', { game }, 'carol'), /creator/)
+  assert.equal((await post('/deleteGame', { game }, 'alice')).value, true)
+
+  const rows = await cds.tx(async () => ({
+    games: await SELECT.from(Games).where({ ID: game }),
+    players: await SELECT.from(Players).where({ game_ID: game }),
+    planets: await SELECT.from(Planets).where({ game_ID: game }),
+    fleets: await SELECT.from(Fleets).where({ game_ID: game }),
+    messages: await SELECT.from(Messages).where({ game_ID: game })
+  }))
+  assert.equal(rows.games.length, 0)
+  assert.equal(rows.players.length, 0)
+  assert.equal(rows.planets.length, 0)
+  assert.equal(rows.fleets.length, 0)
+  assert.equal(rows.messages.length, 0)
+
+  await assert.rejects(() => post('/deleteGame', { game }, 'alice'), /not found/)
+  assert.ok(!(await get('/Games', 'alice')).value.some(g => g.ID === game))
+})
+
+test('a gamemaster can delete a game he did not create', async () => {
+  const game = (await post('/createGame', {
+    name: 'Purge', planetCount: 8, maxPlayers: 2, turnLimitSec: 3600, seed: 12
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  assert.equal((await post('/deleteGame', { game }, 'admin')).value, true)
+})

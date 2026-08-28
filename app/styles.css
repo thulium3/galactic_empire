@@ -163,6 +163,15 @@ button.link:hover { color: var(--accent); }
 }
 
 .game-list .meta { color: var(--muted); font-size: 12px; }
+.game-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: none;
+}
+
+button.danger:hover:not(:disabled) { background: var(--danger); color: #0b0e14; }
 
 .player-list { list-style: none; margin: 0; padding: 0; }
 

@@ -80,15 +80,15 @@ $('logout-btn').addEventListener('click', () => {
 async function openLobby () {
   leaveGame()
   // Membership comes from MyPlayers - the display name may differ from the login.
-  const [games, joined] = await Promise.all([api.openGames(), api.myGames()])
+  const [games, mine] = await Promise.all([api.openGames(), api.myGames()])
   $('lobby-user').textContent = user() ?? 'signed in'
   $('login-error').textContent = ''
   $('lobby-error').textContent = ''
-  renderGameList(games, joined)
+  renderGameList(games, mine.games, mine.user)
   show('lobby')
 }
 
-function renderGameList (games, joined) {
+function renderGameList (games, joined, myUser) {
   const list = $('game-list')
   list.replaceChildren()
   if (!games.length) {
@@ -124,9 +124,42 @@ function renderGameList (games, joined) {
       }
     })
 
-    item.append(info, button)
+    const actions = document.createElement('div')
+    actions.className = 'game-actions'
+    actions.append(button)
+
+    // Only the creator may delete - the server enforces it either way.
+    if (myUser && game.createdBy === myUser) actions.append(deleteButton(game))
+
+    item.append(info, actions)
     list.append(item)
   }
+}
+
+function deleteButton (game) {
+  const button = document.createElement('button')
+  button.className = 'danger'
+  button.textContent = 'Delete'
+  button.title = 'Delete this game for all players'
+  button.addEventListener('click', async () => {
+    const running = game.status === 'RUNNING'
+    const warning = running
+      ? `Delete the running game "${game.name}" at turn ${game.currentTurn}? All players lose their progress.`
+      : `Delete the game "${game.name}"?`
+    if (!window.confirm(warning)) return
+
+    button.disabled = true
+    $('lobby-error').textContent = ''
+    try {
+      await api.deleteGame(game.ID)
+      if (state.game?.ID === game.ID) leaveGame()
+      await openLobby()   // the refreshed list is the confirmation
+    } catch (err) {
+      $('lobby-error').textContent = errorText(err)
+      button.disabled = false
+    }
+  })
+  return button
 }
 
 $('create-btn').addEventListener('click', async () => {
@@ -538,6 +571,14 @@ const streamHandlers = {
     // Prepended right away; `refresh` re-reads them from the server anyway.
     state.reports = [...data.messages.map(m => ({ ...m, turn: data.turn })), ...state.reports]
     renderReports()
+  },
+
+  gameDeleted: async data => {
+    if (state.game?.ID !== data.game) return
+    leaveGame()
+    await openLobby()
+    // The toast lives in the game view - the lobby needs its own notice.
+    $('lobby-error').textContent = `Game "${data.name}" was deleted by its creator.`
   },
 
   error: err => toast(`connection lost: ${errorText(err)} - retrying`, true)

@@ -10,7 +10,7 @@ service GameService @(requires: 'player') {
   @readonly
   entity Games as projection on db.Games {
     ID, name, status, currentTurn, turnDeadline, turnLimitSec,
-    maxPlayers, planetCount, mapWidth, mapHeight, shipSpeed, shipCost, createdAt,
+    maxPlayers, planetCount, mapWidth, mapHeight, shipSpeed, shipCost, createdAt, createdBy,
     winner.name as winnerName : String(60),
     players : redirected to Participants
   };
@@ -24,7 +24,7 @@ service GameService @(requires: 'player') {
   /** The caller's own player records, including resources. */
   @readonly
   entity MyPlayers as projection on db.Players {
-    ID, game, name, color, resources, turnDone, eliminated, homePlanet.number as homePlanetNumber : Integer
+    ID, game, user, name, color, resources, turnDone, eliminated, homePlanet.number as homePlanetNumber : Integer
   } where user = $user;
 
   /** The caller's fleets in transit. */
@@ -99,6 +99,12 @@ service GameService @(requires: 'player') {
 
   /** Generates the galaxy, assigns home planets and starts turn 1. */
   action startGame (game : UUID) returns Boolean;
+
+  /**
+   * Removes a game and everything that belongs to it, in any status.
+   * Creator or gamemaster only. Irreversible.
+   */
+  action deleteGame (game : UUID) returns Boolean;
 
   /** Dispatches ships from one owned planet to any planet. No recall. */
   action sendFleet (game : UUID, origin : Integer, destination : Integer, ships : Integer) returns FleetInfo;

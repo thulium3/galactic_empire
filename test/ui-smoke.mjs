@@ -141,7 +141,7 @@ await sleep(1800)
 await evaluate(`document.getElementById('login-user').value = 'alice'
                 document.getElementById('login-btn').click(); true`)
 await sleep(1500)
-await evaluate(`[...document.querySelectorAll('#game-list button')].find(b => !b.disabled).click(); true`)
+await evaluate(`[...document.querySelectorAll('#game-list button:not(.danger)')].find(b => !b.disabled).click(); true`)
 await sleep(2500)
 
 check('star map rendered', await evaluate(`document.querySelectorAll('#starmap .planet').length > 0`), true)
