@@ -3,6 +3,10 @@
 Turn-based multiplayer space conquest. SAP CAP (Node.js) backend, plain
 ES-module/SVG frontend - no build step, no runtime dependencies beyond CAP.
 
+## Prerequisites
+For local setup, only current version of Node.js. 
+For deployment to BTP, just build it locally and run 'cds up'.
+
 ## Setup
 
 ```bash
