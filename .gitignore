@@ -6,6 +6,7 @@ gen/
 .env
 *.log
 app/router/resources/
+app/js/package-lock.json
 mta_archives/
 .mta/
 app/router/default-env.json

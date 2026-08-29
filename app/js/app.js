@@ -392,6 +392,7 @@ async function renderOrderPanel () {
     `${state.game.shipCost} resources per ship, you have ${state.me.resources}` +
     (origin.pendingShips ? ` · ${origin.pendingShips} arriving next turn` : '')
   $('build-count').max = Math.floor(state.me.resources / state.game.shipCost)
+  renderDispatched(origin, byNumber)
 
   if (!target) return
 
@@ -402,6 +403,7 @@ async function renderOrderPanel () {
   $('send-count').max = origin.ships
   // Never leave the field on a value the planet cannot supply.
   $('send-count').value = Math.max(1, Math.min(Number($('send-count').value) || 1, origin.ships))
+  $('send-btn').disabled = origin.ships < 1
 
   try {
     const route = await api.route(state.game.ID, origin.number, target.number)
@@ -411,6 +413,30 @@ async function renderOrderPanel () {
   } catch {
     $('route-info').textContent = ''
   }
+}
+
+/**
+ * What the selected planet already sent out this turn. A planet may split its
+ * garrison across several destinations, and the garrison alone does not show
+ * where those ships went.
+ */
+function renderDispatched (origin, byNumber) {
+  const node = $('dispatched')
+  const sent = state.fleets.filter(f =>
+    f.originNumber === origin.number && f.departureTurn === state.game.currentTurn)
+
+  if (!sent.length) {
+    node.textContent = ''
+    return
+  }
+  // Only name a destination the player has actually explored - the fleet record
+  // knows the name, the commander does not until his ships get there.
+  const label = fleet => {
+    const planet = byNumber.get(fleet.destinationNumber)
+    return planet?.explored ? `#${planet.number} ${planet.name}` : `#${fleet.destinationNumber}`
+  }
+  const total = sent.reduce((sum, f) => sum + f.ships, 0)
+  node.textContent = `sent this turn: ${sent.map(f => `${f.ships} to ${label(f)}`).join(', ')} (${total} total)`
 }
 
 $('build-btn').addEventListener('click', async () => {
@@ -429,7 +455,9 @@ $('send-btn').addEventListener('click', async () => {
   const ships = Number($('send-count').value)
   try {
     const fleet = await api.sendFleet(state.game.ID, origin, target, ships)
-    clearSelection()
+    // The origin stays selected: a planet may dispatch to several destinations
+    // in the same turn, so only the destination is released.
+    state.selection.target = null
     await refresh()
     toast(`${ships} ships on their way, arriving turn ${fleet.arrivalTurn}.`)
   } catch (err) {

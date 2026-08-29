@@ -60,6 +60,8 @@ modules:
         - rm -rf resources
         - mkdir -p resources
         - cp -R ../index.html ../styles.css ../js resources/
+        # app/js/package.json only marks the sources as ESM for the test runner
+        - rm -f resources/js/package.json resources/js/package-lock.json
       ignore: ["node_modules/", "default-env.json"]
     requires:
       - name: srv-api

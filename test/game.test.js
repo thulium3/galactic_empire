@@ -199,3 +199,37 @@ test('a gamemaster can delete a game he did not create', async () => {
 
   assert.equal((await post('/deleteGame', { game }, 'admin')).value, true)
 })
+
+test('one planet can split its garrison across several destinations in one turn', async () => {
+  const game = (await post('/createGame', {
+    name: 'Split', planetCount: 20, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 1600, mapHeight: 900, shipSpeed: 200, seed: 4711
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const map = (await fn('starMap', { game }, 'alice')).value
+  const home = map.find(p => p.mine)
+  const [first, second] = map.filter(p => p.number !== home.number)
+  assert.equal(home.ships, 20)
+
+  const one = await post('/sendFleet', { game, origin: home.number, destination: first.number, ships: 6 }, 'alice')
+  const two = await post('/sendFleet', { game, origin: home.number, destination: second.number, ships: 9 }, 'alice')
+  assert.equal(one.ships, 6)
+  assert.equal(two.ships, 9)
+  assert.notEqual(one.ID, two.ID)
+
+  const after = (await fn('starMap', { game }, 'alice')).value.find(p => p.number === home.number)
+  assert.equal(after.ships, 5, 'both dispatches leave the garrison')
+
+  const inTransit = (await get(`/MyFleets?$filter=game_ID eq ${game}`, 'alice')).value
+  assert.equal(inTransit.length, 2)
+  assert.deepEqual(inTransit.map(f => f.ships).sort((a, b) => a - b), [6, 9])
+  assert.ok(inTransit.every(f => f.originNumber === home.number))
+
+  // The garrison is the only limit - the third order asks for one ship too many.
+  await assert.rejects(
+    () => post('/sendFleet', { game, origin: home.number, destination: first.number, ships: 6 }, 'alice'),
+    /Only 5 ships/)
+  await post('/sendFleet', { game, origin: home.number, destination: first.number, ships: 5 }, 'alice')
+})
