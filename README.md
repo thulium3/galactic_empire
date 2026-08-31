@@ -119,13 +119,27 @@ docker compose up -d --build
 open http://localhost:4004
 ```
 
-`docker compose logs -f app` follows the server, `docker compose down` stops it,
-`docker compose down -v` also drops the database volume.
+First start takes about a minute: the image is built, Postgres initialises, and
+the entrypoint deploys the schema. `database not ready yet, retrying in 3s` in
+the log during those seconds is expected, not a failure.
 
 | Part | Purpose |
 |---|---|
 | `app` | CAP backend **and** the static web client - no approuter needed |
 | `db` | Postgres 17, data in the named volume `pgdata` |
+
+### Playing a game
+
+1. Open the URL and type any name - that name *is* your identity, there is
+   nothing to register and no password.
+2. Create a game in the lobby. You are its first player and its creator.
+3. **A game needs at least two players.** The second one joins from another
+   browser tab, another browser or another machine, under a different name.
+   Tabs are independent: the name lives in the page, not in a cookie.
+4. The creator presses *Start game*. Only the creator or a name listed in
+   `GE_GAMEMASTERS` can start or delete it.
+5. A turn resolves once every player has ended it, or when the turn timer runs
+   out. See [Rules implemented](#rules-implemented).
 
 ### There is no authentication
 
@@ -136,6 +150,59 @@ put such an instance on the public internet.
 
 `GE_GAMEMASTERS=alice,bob` in `.env` grants those names the `gamemaster` role,
 which may start and delete games created by others.
+
+### Letting other players in
+
+Compose publishes the port on every interface, so anyone on your network reaches
+the game at `http://<your-host-ip>:4004`. Change the host port with `GE_PORT` in
+`.env` if 4004 is taken. macOS and Windows may ask you to allow the connection
+through the firewall the first time.
+
+Nothing else is needed - the client is served from the same origin as the API,
+so there is no CORS or callback URL to configure.
+
+### Everyday commands
+
+| Task | Command |
+|---|---|
+| Start, building if needed | `docker compose up -d --build` |
+| Follow the server log | `docker compose logs -f app` |
+| Restart just the app | `docker compose restart app` |
+| Stop, keep the games | `docker compose down` |
+| Stop and wipe the database | `docker compose down -v` |
+| SQL prompt | `docker compose exec db psql -U galactic -d galactic` |
+| Back up the games | `docker compose exec -T db pg_dump -U galactic galactic > backup.sql` |
+| Restore a backup | `docker compose exec -T db psql -U galactic -d galactic < backup.sql` |
+
+### After changing the code
+
+The sources are baked into the image, so a rebuild is needed:
+
+```bash
+docker compose up -d --build
+```
+
+For anything more than a one-off check that is too slow. Iterate against sqlite
+instead (see [Setup](#setup)) and keep the container for verifying the real
+thing:
+
+```bash
+docker compose stop app                                   # free port 4004
+npm run watch                                             # mocked users only
+CDS_REQUIRES_AUTH_IMPL=srv/auth/open-auth.js npm run watch # any name, like the container
+GE_URL=http://localhost:4004 npm run test:ui              # smoke test the container
+```
+
+### No `docker` command? Podman works
+
+The images and the compose file are plain OCI/Compose, so Podman runs them
+unchanged. With Podman Desktop on macOS:
+
+```bash
+podman machine start
+export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+docker-compose up -d --build    # or: podman compose up -d --build
+```
 
 ### Profiles
 
@@ -164,6 +231,16 @@ restarting or redeploying the container keeps running games.
 - **No TLS.** Put a reverse proxy in front if it leaves your LAN.
 - **The default Postgres password is `galactic`.** Change it in `.env` before
   the container is reachable from anywhere but localhost.
+
+### When it does not work
+
+| Symptom | Cause |
+|---|---|
+| `address already in use` | `cds watch` or an older container holds 4004 - stop it or set `GE_PORT` |
+| The name is rejected and the login screen stays up | The API refused the request, the reason is on the screen and in `docker compose logs app` |
+| `403 ... lacking required roles: [player]` | You are on the `development` profile, which only knows the mocked users. The container never answers this |
+| `schema deployment failed - giving up` | Postgres never became healthy: `docker compose logs db` |
+| Games gone after a restart | `docker compose down -v` deletes the volume. Plain `down` does not |
 
 ## Deployment to SAP BTP (Cloud Foundry)
 
