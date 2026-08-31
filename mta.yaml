@@ -10,7 +10,9 @@ build-parameters:
     - builder: custom
       commands:
         - npm ci
-        - npx cds build --production
+        # The `btp` profile selects HANA + XSUAA; `docker` selects Postgres and
+        # open access. "production" alone no longer implies a target.
+        - npx cds build --production --profile btp
 
 modules:
   # ---------------------------------------------------------------- backend
@@ -25,6 +27,8 @@ modules:
       buildpack: nodejs_buildpack
       memory: 512M
       disk-quota: 1024M
+    properties:
+      CDS_ENV: btp # activates the HANA + XSUAA profile, see package.json
     build-parameters:
       builder: npm-ci
     provides:

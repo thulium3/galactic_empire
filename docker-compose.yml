@@ -1,0 +1,39 @@
+# Local / self-hosted deployment: one app container, one Postgres.
+# Copy .env.example to .env to change the credentials.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-galactic}
+      POSTGRES_USER: ${POSTGRES_USER:-galactic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-galactic}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-galactic} -d ${POSTGRES_DB:-galactic}']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  app:
+    build: .
+    ports:
+      - '${GE_PORT:-4004}:4004'
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # CAP maps CDS_REQUIRES_DB_CREDENTIALS_* onto requires.db.credentials.
+      CDS_REQUIRES_DB_CREDENTIALS_HOST: db
+      CDS_REQUIRES_DB_CREDENTIALS_PORT: '5432'
+      CDS_REQUIRES_DB_CREDENTIALS_DATABASE: ${POSTGRES_DB:-galactic}
+      CDS_REQUIRES_DB_CREDENTIALS_USER: ${POSTGRES_USER:-galactic}
+      CDS_REQUIRES_DB_CREDENTIALS_PASSWORD: ${POSTGRES_PASSWORD:-galactic}
+      # Comma separated names that may start and delete any game. Optional.
+      GE_GAMEMASTERS: ${GE_GAMEMASTERS:-}
+    restart: unless-stopped
+
+volumes:
+  pgdata:

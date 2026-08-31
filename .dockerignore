@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+gen
+mta_archives
+.mta
+app/router
+test
+db.sqlite*
+*.log
+*.mtar
+.env
+Dockerfile
+docker-compose.yml

@@ -108,6 +108,63 @@ events.addEventListener('turnResolved', e => render(JSON.parse(e.data)))
 events.addEventListener('report', e => showReports(JSON.parse(e.data).messages))
 ```
 
+## Deployment with Docker
+
+Self-hosted alternative to BTP: one app container plus Postgres, no identity
+provider. Players type whatever name they like on the login screen.
+
+```bash
+cp .env.example .env         # optional: change the Postgres password
+docker compose up -d --build
+open http://localhost:4004
+```
+
+`docker compose logs -f app` follows the server, `docker compose down` stops it,
+`docker compose down -v` also drops the database volume.
+
+| Part | Purpose |
+|---|---|
+| `app` | CAP backend **and** the static web client - no approuter needed |
+| `db` | Postgres 17, data in the named volume `pgdata` |
+
+### There is no authentication
+
+`srv/auth/open-auth.js` takes the username straight from the HTTP Basic header
+and grants it the `player` role. Nothing is verified, so anyone can play as
+anyone else by typing their name. That is the point of this deployment - do not
+put such an instance on the public internet.
+
+`GE_GAMEMASTERS=alice,bob` in `.env` grants those names the `gamemaster` role,
+which may start and delete games created by others.
+
+### Profiles
+
+The deployment target is chosen by a CDS profile, not by `NODE_ENV`:
+
+| Profile | Database | Auth | Set by |
+|---|---|---|---|
+| `development` | sqlite (`db.sqlite`) | mocked users | default |
+| `docker` | Postgres | `open-auth.js` | `CDS_ENV=docker` in the `Dockerfile` |
+| `btp` | HANA | XSUAA | `CDS_ENV=btp` in `mta.yaml` |
+
+Both deployments build from the same sources: `cds build --production --profile
+docker` emits the Postgres artifacts, `--profile btp` the HANA ones.
+
+### Schema changes
+
+The entrypoint runs `cds-deploy` before the server starts. `@cap-js/postgres`
+defaults to `schema_evolution: auto`, so this is an incremental migration -
+restarting or redeploying the container keeps running games.
+
+### Things to know before exposing it
+
+- **One app container only.** Same reason as on BTP: the turn timer and the SSE
+  bus are in-process. `docker compose up --scale app=2` would resolve every turn
+  twice.
+- **No TLS.** Put a reverse proxy in front if it leaves your LAN.
+- **The default Postgres password is `galactic`.** Change it in `.env` before
+  the container is reachable from anywhere but localhost.
+
 ## Deployment to SAP BTP (Cloud Foundry)
 
 ```bash
@@ -231,6 +288,10 @@ srv/lib/turn-timer.js  turn time limit enforcement
 srv/lib/event-bus.js   pub/sub for live events, dispatched after commit
 srv/lib/rng.js         seeded PRNG - same seed, same galaxy and same battles
 srv/lib/names.js       planet names, player colors
+srv/auth/open-auth.js  container deployment: any username, no verification
+Dockerfile             app image, multi stage (cds build -> runtime)
+docker-compose.yml     app + Postgres
+docker/entrypoint.sh   schema deploy, then cds-serve
 mta.yaml               BTP deployment descriptor
 xs-security.json       XSUAA scopes and role templates
 app/router/            approuter: routes, logout, static hosting of app/
