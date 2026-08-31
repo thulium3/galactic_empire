@@ -49,10 +49,9 @@ test('a full two player game runs from lobby to a resolved battle', async () => 
   assert.ok(aliceMap.filter(p => !p.explored).every(p => p.name === null && p.ships === null))
 
   // --- building -------------------------------------------------------
-  const me = (await get(`/MyPlayers?$filter=game_ID eq ${game}`, 'alice')).value[0]
-  assert.equal(me.resources, 100)
+  assert.equal(home.resources, 100, 'the starting stockpile sits on the home planet')
   const left = (await post('/buildShips', { game, planet: home.number, ships: 5 }, 'alice')).value
-  assert.equal(left, 50)
+  assert.equal(left, 50, 'the planet paid for its own ships')
 
   // --- dispatching a fleet --------------------------------------------
   const target = aliceMap
@@ -90,8 +89,8 @@ test('a full two player game runs from lobby to a resolved battle', async () => 
   const turn2 = (await fn('starMap', { game }, 'alice')).value.find(p => p.number === home.number)
   assert.equal(turn2.ships, 10, 'ships built last turn are now stationed')
   assert.equal(turn2.pendingShips, 0)
+  assert.equal(turn2.resources, 60, 'the home planet produced 10 into its own stockpile')
   const player2 = (await get(`/MyPlayers?$filter=game_ID eq ${game}`, 'alice')).value[0]
-  assert.equal(player2.resources, 60, 'home planet produced 10 resources')
   assert.equal(player2.turnDone, false, 'ready flag is reset')
 
   // --- let the fleet arrive -------------------------------------------
@@ -237,4 +236,58 @@ test('one planet can split its garrison across several destinations in one turn'
     () => post('/sendFleet', { game, origin: home.number, destination: first.number, ships: 6 }, 'alice'),
     /Only 5 ships/)
   await post('/sendFleet', { game, origin: home.number, destination: first.number, ships: 5 }, 'alice')
+})
+
+test('a stockpile belongs to its planet and cannot be spent anywhere else', async () => {
+  const game = (await post('/createGame', {
+    name: 'Local economy', planetCount: 16, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 600, mapHeight: 600, shipSpeed: 5000, shipCost: 10, seed: 2027
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const home = (await fn('starMap', { game }, 'alice')).value.find(p => p.mine)
+  assert.equal(home.resources, 100)
+
+  // Take a second planet: shipSpeed is huge, so the fleet lands next turn.
+  // Which planets are uninhabited is hidden from the player, so pick one that
+  // is actually undefended straight from the database.
+  const empty = await cds.tx(async () => {
+    const { Planets } = cds.entities('galactic')
+    return SELECT.one.from(Planets)
+      .where({ game_ID: game, natives: 0, owner_ID: null })
+      .orderBy('number')
+  })
+  assert.ok(empty, 'the galaxy has at least one uninhabited planet')
+  await post('/sendFleet', { game, origin: home.number, destination: empty.number, ships: 20 }, 'alice')
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  const map = (await fn('starMap', { game }, 'alice')).value
+  const mine = map.filter(p => p.mine)
+  assert.equal(mine.length, 2, 'the second planet was taken')
+
+  const conquered = mine.find(p => p.number === empty.number)
+  const first = mine.find(p => p.number === home.number)
+  assert.equal(conquered.resources, 0, 'a fresh conquest starts with an empty depot')
+  assert.equal(first.resources, 100 + first.production, 'production accrues where it is produced')
+
+  // The rich planet cannot bankroll the poor one.
+  await assert.rejects(
+    () => post('/buildShips', { game, planet: conquered.number, ships: 1 }, 'alice'),
+    /Not enough resources on planet #/)
+
+  // ... but the planet holding the stockpile can spend it.
+  const rest = (await post('/buildShips', { game, planet: first.number, ships: 3 }, 'alice')).value
+  assert.equal(rest, 100 + first.production - 30)
+
+  // Each planet keeps its own books.
+  const after = (await fn('starMap', { game }, 'alice')).value
+  assert.equal(after.find(p => p.number === conquered.number).resources, 0)
+  assert.equal(after.find(p => p.number === first.number).resources, rest)
+
+  // A foreign planet never discloses its stockpile.
+  const bobsView = (await fn('starMap', { game }, 'bob')).value
+  assert.ok(bobsView.filter(p => !p.mine).every(p => p.resources === null),
+    'stockpiles of other players stay hidden')
 })

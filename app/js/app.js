@@ -296,7 +296,9 @@ function updateSelectionVisuals () {
 
 function renderStats () {
   const mine = state.planets.filter(p => p.mine)
-  $('stat-resources').textContent = state.me.resources
+  // No empire treasury: this is the sum of the per planet stockpiles, and none
+  // of it can be spent anywhere but on the planet that holds it.
+  $('stat-resources').textContent = mine.reduce((sum, p) => sum + (p.resources ?? 0), 0)
   $('stat-planets').textContent = mine.length
   $('stat-ships').textContent = mine.reduce((sum, p) => sum + (p.ships ?? 0), 0)
   $('stat-transit').textContent = state.fleets.reduce((sum, f) => sum + f.ships, 0)
@@ -386,12 +388,16 @@ async function renderOrderPanel () {
 
   if (!origin) return
 
+  const stock = origin.resources ?? 0
+  const affordable = Math.floor(stock / state.game.shipCost)
   $('build-dot').style.background = origin.color
   $('build-name').textContent = `#${origin.number} ${origin.name} - ${origin.ships} ships`
   $('build-cost').textContent =
-    `${state.game.shipCost} resources per ship, you have ${state.me.resources}` +
+    `${state.game.shipCost} per ship · ${stock} resources on this planet (+${origin.production}/turn)` +
     (origin.pendingShips ? ` · ${origin.pendingShips} arriving next turn` : '')
-  $('build-count').max = Math.floor(state.me.resources / state.game.shipCost)
+  $('build-count').max = affordable
+  $('build-count').value = Math.max(1, Math.min(Number($('build-count').value) || 1, affordable))
+  $('build-btn').disabled = affordable < 1
   renderDispatched(origin, byNumber)
 
   if (!target) return
@@ -487,6 +493,7 @@ function showTooltip (planet, event) {
   if (planet.explored) {
     if (planet.ownerName) rows.push(['owner', planet.ownerName])
     rows.push(['production', `${planet.production}/turn`])
+    if (planet.mine) rows.push(['resources', planet.resources ?? 0])
     if (planet.natives > 0) rows.push(['natives', planet.natives])
     else rows.push(['ships', planet.ships ?? 0])
     if (planet.pendingShips) rows.push(['building', planet.pendingShips])

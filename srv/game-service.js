@@ -79,7 +79,7 @@ module.exports = class GameService extends cds.ApplicationService {
     const name = displayName || user
     const color = PLAYER_COLORS[players.length]
     await INSERT.into(Players).entries({
-      ID, game_ID: gameId, user, name, color, resources: 0, turnDone: false, eliminated: false
+      ID, game_ID: gameId, user, name, color, turnDone: false, eliminated: false
     })
 
     publish(gameId, 'playerJoined', {
@@ -115,7 +115,9 @@ module.exports = class GameService extends cds.ApplicationService {
       seed: game.seed
     })
 
-    const rows = generated.map(p => ({ ...p, ID: cds.utils.uuid(), game_ID: game.ID, ships: 0, pendingShips: 0, owner_ID: null }))
+    const rows = generated.map(p => ({
+      ...p, ID: cds.utils.uuid(), game_ID: game.ID, ships: 0, pendingShips: 0, resources: 0, owner_ID: null
+    }))
     const byNumber = new Map(rows.map(r => [r.number, r]))
 
     players.forEach((player, index) => {
@@ -126,12 +128,11 @@ module.exports = class GameService extends cds.ApplicationService {
       player.homePlanet_ID = home.ID
     })
 
-    await INSERT.into(Planets).entries(rows)
-
     const intel = []
     const messages = []
     for (const player of players) {
       const home = rows.find(r => r.ID === player.homePlanet_ID)
+      home.resources = game.startResources
       intel.push({
         player_ID: player.ID,
         planet_ID: home.ID,
@@ -149,15 +150,15 @@ module.exports = class GameService extends cds.ApplicationService {
         turn: 1,
         kind: 'SYSTEM',
         planet_ID: home.ID,
-        text: `Your empire starts on ${home.name} (#${home.number}) with ${game.startShips} ships and ${game.startResources} resources.`,
+        text: `Your empire starts on ${home.name} (#${home.number}) with ${game.startShips} ships and ${game.startResources} resources stockpiled there.`,
         read: false
       })
       await UPDATE(Players, player.ID).with({
         homePlanet_ID: player.homePlanet_ID,
-        resources: game.startResources,
         turnDone: false
       })
     }
+    await INSERT.into(Planets).entries(rows)
     await INSERT.into(PlanetIntel).entries(intel)
     await INSERT.into(Messages).entries(messages)
 
@@ -255,7 +256,7 @@ module.exports = class GameService extends cds.ApplicationService {
   }
 
   async onBuildShips (req) {
-    const { Planets, Players } = cds.entities('galactic')
+    const { Planets } = cds.entities('galactic')
     const context = await this.loadContext(req)
     if (!context) return
     const { game, player } = context
@@ -267,14 +268,20 @@ module.exports = class GameService extends cds.ApplicationService {
     if (!planet) return
     if (planet.owner_ID !== player.ID) return req.reject(403, `Planet #${planetNumber} is not yours`)
 
+    // A planet pays for its own shipyard. Resources cannot be moved between
+    // planets, so a rich neighbour is of no help here.
     const cost = ships * game.shipCost
-    if (player.resources < cost) {
-      return req.reject(400, `Not enough resources: ${cost} required, ${player.resources} available`)
+    if (planet.resources < cost) {
+      return req.reject(400,
+        `Not enough resources on planet #${planetNumber}: ${cost} required, ${planet.resources} available`)
     }
 
-    await UPDATE(Players, player.ID).with({ resources: player.resources - cost })
-    await UPDATE(Planets, planet.ID).with({ pendingShips: planet.pendingShips + ships })
-    return player.resources - cost
+    const left = planet.resources - cost
+    await UPDATE(Planets, planet.ID).with({
+      resources: left,
+      pendingShips: planet.pendingShips + ships
+    })
+    return left
   }
 
   async onEndTurn (req) {
@@ -333,6 +340,7 @@ module.exports = class GameService extends cds.ApplicationService {
           color: player.color,
           ownerName: player.name,
           production: planet.production,
+          resources: planet.resources,
           ships: planet.ships,
           natives: 0,
           pendingShips: planet.pendingShips,
@@ -352,6 +360,7 @@ module.exports = class GameService extends cds.ApplicationService {
           color: UNKNOWN_COLOR,
           ownerName: null,
           production: null,
+          resources: null,
           ships: null,
           natives: null,
           pendingShips: null,
@@ -370,6 +379,7 @@ module.exports = class GameService extends cds.ApplicationService {
         color: known.knownOwnerColor ?? (known.knownNatives > 0 ? NATIVE_COLOR : UNKNOWN_COLOR),
         ownerName: owner?.name ?? (known.knownNatives > 0 ? 'Natives' : null),
         production: known.knownProduction,
+        resources: null, // never disclosed for a planet that is not yours
         ships: known.knownShips,
         natives: known.knownNatives,
         pendingShips: null,

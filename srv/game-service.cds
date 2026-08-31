@@ -21,10 +21,10 @@ service GameService @(requires: 'player') {
     ID, game, name, color, turnDone, eliminated, createdAt
   };
 
-  /** The caller's own player records, including resources. */
+  /** The caller's own player records. Resources sit on the planets. */
   @readonly
   entity MyPlayers as projection on db.Players {
-    ID, game, user, name, color, resources, turnDone, eliminated, homePlanet.number as homePlanetNumber : Integer
+    ID, game, user, name, color, turnDone, eliminated, homePlanet.number as homePlanetNumber : Integer
   } where user = $user;
 
   /** The caller's fleets in transit. */
@@ -56,6 +56,7 @@ service GameService @(requires: 'player') {
     color        : String(7);        // owner color, native color or unknown grey
     ownerName    : String(60);
     production   : Integer;
+    resources    : Integer;          // own planets only - a stockpile is not intel
     ships        : Integer;
     natives      : Integer;
     pendingShips : Integer;
@@ -109,7 +110,11 @@ service GameService @(requires: 'player') {
   /** Dispatches ships from one owned planet to any planet. No recall. */
   action sendFleet (game : UUID, origin : Integer, destination : Integer, ships : Integer) returns FleetInfo;
 
-  /** Buys ships; they are stationed on the planet at the start of the next turn. */
+  /**
+   * Buys ships from the planet's own stockpile - resources cannot be moved or
+   * pooled. Ships are stationed at the start of the next turn.
+   * Returns the resources left on that planet.
+   */
   action buildShips (game : UUID, planet : Integer, ships : Integer) returns Integer;
 
   /** Marks the caller ready. Resolves the turn once everybody is ready. */

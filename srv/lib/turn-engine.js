@@ -9,7 +9,7 @@ const { publish } = require('./event-bus')
  * Advances a game by one turn:
  *   1. arriving fleets land, fight and capture
  *   2. ships built last turn become available
- *   3. planets produce resources into their owner's pool
+ *   3. every owned planet produces into its own stockpile
  *   4. intel is refreshed, turn reports are written
  *   5. turn counter, deadline and ready flags are reset
  *
@@ -42,8 +42,9 @@ async function resolveTurn (game) {
     if (planet.owner_ID) {
       const owner = playersById.get(planet.owner_ID)
       if (owner) {
-        owner.resources += planet.production
-        owner.dirty = true
+        // Production stays where it is produced - there is no empire treasury.
+        planet.resources += planet.production
+        planet.dirty = true
         seenBy.get(owner.ID).add(planet.ID)
       }
     }
@@ -181,6 +182,11 @@ function resolveArrivals ({ incoming, planetsById, playersById, rng, nextTurn, m
   }
 }
 
+/**
+ * The stockpile sits on the planet, so whoever holds the planet holds what is
+ * stored there: `resources` deliberately survives a capture. Change this line
+ * to `planet.resources = 0` if a conquest should raze the depot instead.
+ */
 function capture (planet, playerId, ships) {
   planet.owner_ID = playerId
   planet.ships = ships
@@ -194,17 +200,17 @@ async function persistPlanets (planets) {
       owner_ID: planet.owner_ID ?? null,
       ships: planet.ships,
       natives: planet.natives,
-      pendingShips: planet.pendingShips
+      pendingShips: planet.pendingShips,
+      resources: planet.resources
     })
   }
 }
 
-/** Persists resources/elimination and clears the ready flag for the new turn. */
+/** Persists elimination and clears the ready flag for the new turn. */
 async function persistPlayers (players) {
   const { Players } = cds.entities('galactic')
   for (const player of players) {
     await UPDATE(Players, player.ID).with({
-      resources: player.resources,
       eliminated: player.eliminated,
       turnDone: false
     })

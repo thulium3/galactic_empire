@@ -39,7 +39,6 @@ entity Players : cuid, managed {
   user       : String(80) not null;             // req.user.id
   name       : String(60) not null;
   color      : String(7)  not null;             // #rrggbb, unique per game
-  resources  : Integer default 0;
   turnDone   : Boolean default false;           // submitted actions for current turn
   eliminated : Boolean default false;
   homePlanet : Association to Planets;
@@ -52,6 +51,10 @@ entity Players : cuid, managed {
 /**
  * A star system. `owner` null + natives > 0 => held by natives,
  * `owner` null + natives = 0 => empty.
+ *
+ * Every planet runs its own economy: `production` accrues into `resources` on
+ * this planet each turn, and ships can only be built here from that stockpile.
+ * There is no empire-wide treasury and no way to move resources.
  */
 entity Planets : cuid, managed {
   game         : Association to Games not null;
@@ -59,7 +62,8 @@ entity Planets : cuid, managed {
   name         : String(40) not null;
   x            : Decimal(9, 2) not null;
   y            : Decimal(9, 2) not null;
-  production   : Integer default 0;             // resources per turn
+  production   : Integer default 0;             // resources per turn, this planet only
+  resources    : Integer default 0;             // stockpile, spendable only here
   owner        : Association to Players;
   natives      : Integer default 0;             // defenders when unowned
   ships        : Integer default 0;             // stationed ships of the owner

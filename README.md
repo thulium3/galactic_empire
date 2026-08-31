@@ -31,17 +31,20 @@ and `admin` (roles `player`, `gamemaster`). Password is empty.
 |---|---|
 | Galaxy | `planetCount` planets (default 99) on a torus map - leaving left re-enters right, top wraps to bottom |
 | Home planets | Randomly assigned, spread out via farthest-point selection, no natives, production 10 |
-| Resources | Global pool per player; every owned planet adds its production each turn |
-| Ship building | Costs `shipCost` resources; ships join the garrison at the start of the next turn |
+| Resources | **Per planet.** Every owned planet accrues its own `production` into its own stockpile each turn. There is no empire treasury and no way to move resources between planets |
+| Ship building | Paid from the stockpile of the planet that builds them, `shipCost` each; ships join that planet's garrison at the start of the next turn |
+| Conquest | A captured planet keeps its stockpile - whoever holds the planet holds what is stored there. Unowned planets produce nothing, so a fresh conquest starts empty |
 | Movement | Fleets travel `shipSpeed` distance units per turn, ETA fixed at launch, no recall |
 | Combat | `attackers x rnd(0.7..1.3)` vs `defenders x (rnd(0.7..1.3) + 0.1)`, loser is wiped out |
 | Natives | Static defenders, no growth, no ships |
-| Fog of war | Positions always visible; name, owner, production and garrison only after the planet was reached or owned |
+| Fog of war | Positions always visible; name, owner, production and garrison only after the planet was reached or owned. A stockpile is never visible on a planet that is not yours |
 | Turn end | All players ready, or `turnLimitSec` elapsed (background timer) |
 | Elimination | No planets and no fleets left; last player standing wins |
 
-Turn resolution order: pending ships join garrisons -> planets produce -> fleets arrive
-and fight -> intel and reports are written -> counters reset.
+Turn resolution order: pending ships join garrisons -> every owned planet produces
+into its own stockpile -> fleets arrive and fight -> intel and reports are written
+-> counters reset. A planet pays out for the turn it was held, not for the one it
+is lost in.
 
 Determinism: `seed` drives galaxy generation and all combat rolls (`seed` mixed with
 the turn number), so a game can be replayed exactly.
@@ -72,7 +75,7 @@ Base path `/odata/v4/game`, all endpoints require role `player`.
 ### Entities (read-only unless noted)
 
 - `Games`, `Participants` - lobby and public player info
-- `MyPlayers` - own player incl. resources
+- `MyPlayers` - own player record (resources live on the planets, see `starMap`)
 - `MyFleets` - own fleets in transit
 - `MyMessages` - turn reports, `read` is patchable
 
