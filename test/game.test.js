@@ -40,7 +40,12 @@ test('a full two player game runs from lobby to a resolved battle', async () => 
   assert.equal(home.mine, true)
   assert.equal(home.ships, 20)
   assert.equal(home.production, 10)
-  assert.ok(aliceMap.every(p => typeof p.x === 'number' && typeof p.y === 'number'), 'positions are always visible')
+  // cds10 defaults to `ieee754compatible`, so Decimals go over the wire as
+  // strings - on every database, not just HANA and Postgres. What matters here
+  // is that a position is always there and always a usable number; the client
+  // coerces the type (see app/js/api.js).
+  assert.ok(aliceMap.every(p => Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))),
+    'positions are always visible')
   assert.ok(aliceMap.filter(p => !p.explored).every(p => p.name === null && p.ships === null))
 
   // --- building -------------------------------------------------------

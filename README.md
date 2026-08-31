@@ -5,7 +5,8 @@ ES-module/SVG frontend - no build step, no runtime dependencies beyond CAP.
 Built using Claude AI.
 
 ## Prerequisites
-For local setup, only current version of Node.js. 
+Node.js 22 or newer - `@sap/cds` 10 does not run on anything older. Nothing else
+for local setup; Docker only for the container deployment.
 
 ## Setup
 
@@ -20,9 +21,6 @@ npm run test:ui     # browser smoke test, needs a running server
 `test:ui` drives the real UI in headless Chrome with **real mouse input** over the
 DevTools protocol. Synthetic `element.click()` does not exercise the same code
 path in the browser and has already missed one bug here - keep it that way.
-
-> The `cds` CLI must run on the same Node.js major version that built `better-sqlite3`.
-> If `cds` picks a different one, call it explicitly: `node $(which cds) deploy --to sqlite:db.sqlite`.
 
 Mocked users for local development: `alice`, `bob`, `carol`, `dave` (role `player`)
 and `admin` (roles `player`, `gamemaster`). Password is empty.
@@ -331,6 +329,12 @@ straight from `app/`. Log in with any mocked user, create or join a game.
   distance, travel time and arrival turn before you commit.
 - **Live**: lobby, ready states, turn results and combat reports arrive over the
   event stream - no polling.
+
+**`Decimal` arrives as a string.** cds 10 defaults to `ieee754compatible`, so
+planet coordinates, distances and `shipSpeed` come over OData as `"1188.84"` on
+every database - sqlite included. `app/js/api.js` coerces them at the boundary;
+keep it that way. Doing arithmetic on a raw value concatenates instead of adding,
+which once drew route lines into the top left corner.
 
 ## Example
 
