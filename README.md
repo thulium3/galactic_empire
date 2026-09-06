@@ -30,21 +30,28 @@ and `admin` (roles `player`, `gamemaster`). Password is empty.
 | Topic | Rule |
 |---|---|
 | Galaxy | `planetCount` planets (default 99) on a torus map - leaving left re-enters right, top wraps to bottom |
+| Planet drift | Every planet moves each turn along a fixed heading, up to `planetDrift` units (default 5). Speeds and headings differ per planet, so the map shears rather than sliding as a block. `planetDrift: 0` keeps the galaxy still |
 | Home planets | Randomly assigned, spread out via farthest-point selection, no natives, production 10 |
 | Resources | **Per planet.** Every owned planet accrues its own `production` into its own stockpile each turn. There is no empire treasury and no way to move resources between planets |
 | Ship building | Paid from the stockpile of the planet that builds them, `shipCost` each; ships join that planet's garrison at the start of the next turn |
 | Conquest | A captured planet keeps its stockpile - whoever holds the planet holds what is stored there. Unowned planets produce nothing, so a fresh conquest starts empty |
-| Movement | Fleets travel `shipSpeed` distance units per turn, ETA fixed at launch, no recall |
+| Movement | Fleets travel `shipSpeed` distance units per turn, ETA fixed at launch, no recall. A fleet tracks its **target planet**, not a coordinate, so a drifting target does not change the arrival turn |
 | Combat | `attackers x rnd(0.7..1.3)` vs `defenders x (rnd(0.7..1.3) + 0.1)`, loser is wiped out |
 | Natives | Static defenders, no growth, no ships |
 | Fog of war | Positions always visible; name, owner, production and garrison only after the planet was reached or owned. A stockpile is never visible on a planet that is not yours |
 | Turn end | All players ready, or `turnLimitSec` elapsed (background timer) |
 | Elimination | No planets and no fleets left; last player standing wins |
 
-Turn resolution order: pending ships join garrisons -> every owned planet produces
-into its own stockpile -> fleets arrive and fight -> intel and reports are written
--> counters reset. A planet pays out for the turn it was held, not for the one it
-is lost in.
+Turn resolution order: planets drift one step -> pending ships join garrisons ->
+every owned planet produces into its own stockpile -> fleets arrive and fight ->
+intel and reports are written -> counters reset. A planet pays out for the turn it
+was held, not for the one it is lost in.
+
+Drift is integrated from a per planet velocity assigned at galaxy generation, from
+its own seeded RNG stream. Same seed, same trajectories - and adding drift does not
+change where a given seed places its planets. `planetDrift` must stay below
+`shipSpeed`, otherwise a planet could outrun every fleet sent at it. Planets may
+drift into each other; overlap is cosmetic, there are no collisions.
 
 Determinism: `seed` drives galaxy generation and all combat rolls (`seed` mixed with
 the turn number), so a game can be replayed exactly.
@@ -57,7 +64,7 @@ Base path `/odata/v4/game`, all endpoints require role `player`.
 
 | Action | Payload | Returns |
 |---|---|---|
-| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `seed` | game UUID (creator joins automatically) |
+| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `planetDrift`, `seed` | game UUID (creator joins automatically) |
 | `joinGame` | `game`, `name` | player UUID |
 | `startGame` | `game` | `true` - creator or `gamemaster` only |
 | `deleteGame` | `game` | `true` - creator or `gamemaster` only, any status, no undo |
@@ -326,6 +333,9 @@ straight from `app/`. Log in with any mocked user, create or join a game.
 - **Torus**: planets on the seam are drawn a second time on the far side, and a
   route leaving one edge is drawn again coming in on the other. Distances stay
   proportional because the aspect ratio is preserved.
+- **Drift**: the galaxy is not static - planets creep along their own headings
+  every turn, so a route you scouted five turns ago is no longer the route you
+  get. Fleets still find their target.
 - **Hover**: name, owner, production, garrison - only what the player has actually
   scouted, with a warning when the intel is older than the current turn.
 - **Orders**: click one of your planets, then a destination. The panel shows

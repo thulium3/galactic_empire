@@ -139,7 +139,8 @@ const planetCoords = planet => ({ ...planet, x: num(planet.x), y: num(planet.y) 
 export const api = {
   // lobby
   openGames: () => list('Games', "$filter=status ne 'FINISHED'&$expand=players($select=name,color)&$orderby=createdAt desc"),
-  game: id => call(`${ODATA}/Games(${id})`).then(g => ({ ...g, shipSpeed: num(g.shipSpeed) })),
+  game: id => call(`${ODATA}/Games(${id})`)
+    .then(g => ({ ...g, shipSpeed: num(g.shipSpeed), planetDrift: num(g.planetDrift) })),
   participants: game => list('Participants', `$filter=game_ID eq ${game}&$orderby=createdAt`),
   /** The caller's games plus the principal id behind them - needed to spot own games. */
   myGames: () => list('MyPlayers', '$select=game_ID,user').then(rows => ({

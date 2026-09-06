@@ -137,3 +137,41 @@ test('the client turns OData decimals into numbers', async () => {
     globalThis.fetch = original
   }
 })
+
+test('drift moves a planet one step and wraps it around the torus', () => {
+  const { driftPosition, wrapCoordinate } = require('../srv/lib/geometry')
+
+  assert.deepEqual(driftPosition({ x: 100, y: 200, vx: 5, vy: -2.5 }, 1000, 1000), { x: 105, y: 197.5 })
+
+  // Coordinates arrive from the database as strings (cds10 ieee754compatible);
+  // adding them without coercion would concatenate.
+  assert.deepEqual(driftPosition({ x: '100.50', y: '200.25', vx: '5.00', vy: '0.25' }, 1000, 1000),
+    { x: 105.5, y: 200.5 })
+
+  // Leaving one edge re-enters on the other.
+  assert.deepEqual(driftPosition({ x: 998, y: 2, vx: 5, vy: -5 }, 1000, 1000), { x: 3, y: 997 })
+  assert.equal(wrapCoordinate(-1, 1000), 999)
+  assert.equal(wrapCoordinate(1000, 1000), 0)
+
+  // A planet without a velocity stays put, whatever the column default was.
+  assert.deepEqual(driftPosition({ x: 10, y: 20 }, 1000, 1000), { x: 10, y: 20 })
+  assert.deepEqual(driftPosition({ x: 10, y: 20, vx: 0, vy: 0 }, 1000, 1000), { x: 10, y: 20 })
+})
+
+test('drift velocities are seeded, bounded and do not disturb the placement', () => {
+  const { generateGalaxy } = require('../srv/lib/galaxy')
+  const args = { planetCount: 20, mapWidth: 800, mapHeight: 800, seed: 4242 }
+
+  const a = generateGalaxy({ ...args, planetDrift: 6 })
+  const b = generateGalaxy({ ...args, planetDrift: 6 })
+  assert.deepEqual(a, b, 'same seed, same galaxy including velocities')
+
+  assert.ok(a.every(p => Math.hypot(p.vx, p.vy) <= 6.02), 'no planet drifts faster than planetDrift')
+  assert.ok(a.some(p => Math.hypot(p.vx, p.vy) > 1), 'planets actually move')
+  assert.ok(new Set(a.map(p => `${p.vx}/${p.vy}`)).size > 1, 'headings differ, the map shears')
+
+  const still = generateGalaxy({ ...args, planetDrift: 0 })
+  assert.ok(still.every(p => p.vx === 0 && p.vy === 0), 'drift 0 keeps the galaxy static')
+  assert.ok(still.every((p, i) => p.x === a[i].x && p.y === a[i].y),
+    'drift does not shift the placement RNG stream')
+})

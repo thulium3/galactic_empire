@@ -20,6 +20,7 @@ entity Games : cuid, managed {
   mapHeight     : Integer        default 1000;  // torus height (wraps around)
   shipSpeed     : Decimal(9, 2)  default 120;   // distance units travelled per turn
   shipCost      : Integer        default 10;    // resources per ship
+  planetDrift   : Decimal(9, 2)  default 5;     // max units a planet drifts per turn, 0 = static galaxy
   startResources: Integer        default 100;
   startShips    : Integer        default 20;
   seed          : Integer;                      // deterministic galaxy + combat rolls
@@ -55,6 +56,9 @@ entity Players : cuid, managed {
  * Every planet runs its own economy: `production` accrues into `resources` on
  * this planet each turn, and ships can only be built here from that stockpile.
  * There is no empire-wide treasury and no way to move resources.
+ *
+ * Planets drift: `x`/`y` advance by `vx`/`vy` every turn and wrap around the
+ * torus. The velocity is fixed for the lifetime of the planet.
  */
 entity Planets : cuid, managed {
   game         : Association to Games not null;
@@ -62,6 +66,8 @@ entity Planets : cuid, managed {
   name         : String(40) not null;
   x            : Decimal(9, 2) not null;
   y            : Decimal(9, 2) not null;
+  vx           : Decimal(9, 2) default 0;       // drift per turn, x axis
+  vy           : Decimal(9, 2) default 0;       // drift per turn, y axis
   production   : Integer default 0;             // resources per turn, this planet only
   resources    : Integer default 0;             // stockpile, spendable only here
   owner        : Association to Players;

@@ -171,6 +171,7 @@ $('create-btn').addEventListener('click', async () => {
       maxPlayers: Number($('new-players').value),
       turnLimitSec: Number($('new-limit').value),
       shipSpeed: Number($('new-speed').value),
+      planetDrift: Number($('new-drift').value),
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT
     })

@@ -291,3 +291,82 @@ test('a stockpile belongs to its planet and cannot be spent anywhere else', asyn
   assert.ok(bobsView.filter(p => !p.mine).every(p => p.resources === null),
     'stockpiles of other players stay hidden')
 })
+
+test('planets drift every turn and a fleet still reaches its moving target', async () => {
+  const game = (await post('/createGame', {
+    name: 'Drifting', planetCount: 16, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 800, mapHeight: 800, shipSpeed: 120, shipCost: 10, planetDrift: 6, seed: 31337
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const before = (await fn('starMap', { game }, 'alice')).value
+  const home = before.find(p => p.mine)
+
+  // Aim at a far planet so the trip lasts several turns while it moves away.
+  const routes = await Promise.all(before.filter(p => p.number !== home.number).map(async p => ({
+    number: p.number, ...(await fn('route', { game, origin: home.number, destination: p.number }, 'alice'))
+  })))
+  const far = routes.sort((a, b) => b.distance - a.distance)[0]
+  assert.ok(far.turns >= 2, 'the target is more than one turn away')
+
+  const fleet = await post('/sendFleet', { game, origin: home.number, destination: far.number, ships: 10 }, 'alice')
+  const promisedArrival = fleet.arrivalTurn
+
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  const after = (await fn('starMap', { game }, 'alice')).value
+  const moved = before.filter(p => {
+    const now = after.find(q => q.number === p.number)
+    return Number(now.x) !== Number(p.x) || Number(now.y) !== Number(p.y)
+  })
+  assert.equal(moved.length, before.length, 'every planet moved, owned and unowned alike')
+
+  // The step is small: nothing teleports across the map.
+  for (const p of before) {
+    const now = after.find(q => q.number === p.number)
+    const step = Math.hypot(
+      Math.min(Math.abs(Number(now.x) - Number(p.x)), 800 - Math.abs(Number(now.x) - Number(p.x))),
+      Math.min(Math.abs(Number(now.y) - Number(p.y)), 800 - Math.abs(Number(now.y) - Number(p.y))))
+    assert.ok(step > 0 && step <= 6.05, `planet #${p.number} drifted ${step}`)
+  }
+
+  // The target keeps moving, but a fleet tracks its planet: the ETA promised at
+  // launch is the turn it actually lands.
+  for (let turn = 2; turn <= promisedArrival; turn++) {
+    await post('/endTurn', { game }, 'alice')
+    await post('/endTurn', { game }, 'bob')
+  }
+  const inTransit = (await get(`/MyFleets?$filter=game_ID eq ${game}`, 'alice')).value
+  assert.equal(inTransit.length, 0, 'the fleet arrived on the promised turn')
+
+  const reports = (await get(`/MyMessages?$filter=game_ID eq ${game}&$orderby=turn desc`, 'alice')).value
+  assert.ok(reports.some(m => m.planetNumber === far.number && ['ARRIVAL', 'CAPTURE', 'COMBAT'].includes(m.kind)),
+    'the fleet reached the planet it was sent to')
+})
+
+test('a galaxy can be kept still, and planets may not outrun fleets', async () => {
+  const game = (await post('/createGame', {
+    name: 'Static', planetCount: 10, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 600, mapHeight: 600, shipSpeed: 150, planetDrift: 0, seed: 5
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const before = (await fn('starMap', { game }, 'alice')).value
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+  const after = (await fn('starMap', { game }, 'alice')).value
+  assert.ok(before.every(p => {
+    const now = after.find(q => q.number === p.number)
+    return Number(now.x) === Number(p.x) && Number(now.y) === Number(p.y)
+  }), 'planetDrift 0 leaves every planet where it was')
+
+  await assert.rejects(() => post('/createGame', {
+    name: 'Runaway', planetCount: 10, maxPlayers: 2, shipSpeed: 100, planetDrift: 100, seed: 1
+  }, 'alice'), /must stay below shipSpeed/)
+  await assert.rejects(() => post('/createGame', {
+    name: 'Backwards', planetCount: 10, maxPlayers: 2, planetDrift: -1, seed: 1
+  }, 'alice'), /cannot be negative/)
+})

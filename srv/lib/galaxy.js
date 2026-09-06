@@ -1,6 +1,6 @@
 'use strict'
 
-const { createRng } = require('./rng')
+const { createRng, mixSeed } = require('./rng')
 const { torusDistance } = require('./geometry')
 const { PLANET_NAMES } = require('./names')
 
@@ -9,11 +9,11 @@ const MAX_PLACEMENT_TRIES = 200
 
 /**
  * Builds the star map: unique names, spread out positions on the torus,
- * production rate and native population per planet.
+ * production rate, native population and drift velocity per planet.
  *
- * @returns {Array<{number,name,x,y,production,natives}>}
+ * @returns {Array<{number,name,x,y,vx,vy,production,natives}>}
  */
-function generateGalaxy ({ planetCount, mapWidth, mapHeight, seed }) {
+function generateGalaxy ({ planetCount, mapWidth, mapHeight, seed, planetDrift = 0 }) {
   const rng = createRng(seed)
   const names = shuffle([...PLANET_NAMES], rng)
   if (names.length < planetCount) throw new Error(`Only ${names.length} planet names available for ${planetCount} planets`)
@@ -33,6 +33,33 @@ function generateGalaxy ({ planetCount, mapWidth, mapHeight, seed }) {
       // Richer planets are better defended; ~35% of the galaxy is uninhabited.
       natives: rng() < 0.35 ? 0 : Math.max(1, Math.round(production * rng.between(1.5, 6)))
     })
+  }
+  assignDrift(planets, planetDrift, seed)
+  return planets
+}
+
+/**
+ * Gives every planet a fixed heading and speed, so the galaxy slowly rearranges
+ * itself. Uses its own RNG stream derived from the seed: adding drift must not
+ * shift the placement stream, or the same seed would produce a different map
+ * than before.
+ *
+ * Speeds vary per planet so the map shears instead of sliding as one block.
+ */
+function assignDrift (planets, planetDrift, seed) {
+  const drift = Number(planetDrift) || 0
+  const rng = createRng(mixSeed(seed ?? 1, 0x0d21f7))
+
+  for (const planet of planets) {
+    if (drift <= 0) {
+      planet.vx = 0
+      planet.vy = 0
+      continue
+    }
+    const heading = rng() * 2 * Math.PI
+    const speed = drift * rng.between(0.3, 1)
+    planet.vx = round2(Math.cos(heading) * speed)
+    planet.vy = round2(Math.sin(heading) * speed)
   }
   return planets
 }
@@ -91,4 +118,4 @@ function round2 (value) {
   return Math.round(value * 100) / 100
 }
 
-module.exports = { generateGalaxy, assignHomePlanets, HOME_PRODUCTION }
+module.exports = { generateGalaxy, assignHomePlanets, assignDrift, HOME_PRODUCTION }

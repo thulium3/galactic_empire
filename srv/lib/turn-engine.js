@@ -2,16 +2,18 @@
 
 const cds = require('@sap/cds')
 const { createRng, mixSeed } = require('./rng')
+const { driftPosition } = require('./geometry')
 const { resolveBattle } = require('./combat')
 const { publish } = require('./event-bus')
 
 /**
  * Advances a game by one turn:
- *   1. arriving fleets land, fight and capture
+ *   1. every planet drifts one step along its own velocity
  *   2. ships built last turn become available
  *   3. every owned planet produces into its own stockpile
- *   4. intel is refreshed, turn reports are written
- *   5. turn counter, deadline and ready flags are reset
+ *   4. arriving fleets land, fight and capture
+ *   5. intel is refreshed, turn reports are written
+ *   6. turn counter, deadline and ready flags are reset
  *
  * Runs inside the caller's transaction.
  */
@@ -30,6 +32,18 @@ async function resolveTurn (game) {
   const playersById = new Map(players.map(p => [p.ID, p]))
   const messages = []
   const seenBy = new Map(players.map(p => [p.ID, new Set()]))
+
+  // The galaxy rearranges itself first, so everything else in this turn - and
+  // every position reported afterwards - uses the new coordinates. A fleet
+  // tracks its target planet, so this never changes an arrival turn.
+  for (const planet of planets) {
+    const moved = driftPosition(planet, game.mapWidth, game.mapHeight)
+    if (moved.x !== Number(planet.x) || moved.y !== Number(planet.y)) {
+      planet.x = moved.x
+      planet.y = moved.y
+      planet.dirty = true
+    }
+  }
 
   // Ships ordered last turn join the garrison before the enemy arrives,
   // and planets pay out for the turn they were held - not for the one they are lost in.
@@ -201,7 +215,9 @@ async function persistPlanets (planets) {
       ships: planet.ships,
       natives: planet.natives,
       pendingShips: planet.pendingShips,
-      resources: planet.resources
+      resources: planet.resources,
+      x: planet.x,
+      y: planet.y
     })
   }
 }

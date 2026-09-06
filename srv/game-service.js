@@ -31,7 +31,8 @@ module.exports = class GameService extends cds.ApplicationService {
     const { Games } = cds.entities('galactic')
     const {
       name, planetCount = 99, maxPlayers = 8, turnLimitSec = 300,
-      mapWidth = 1000, mapHeight = 1000, shipSpeed = 120, shipCost = 10, seed
+      mapWidth = 1000, mapHeight = 1000, shipSpeed = 120, shipCost = 10,
+      planetDrift = 5, seed
     } = req.data
 
     if (!name) return req.reject(400, 'Game name is required')
@@ -40,6 +41,11 @@ module.exports = class GameService extends cds.ApplicationService {
       return req.reject(400, `maxPlayers must be between 2 and ${PLAYER_COLORS.length}`)
     }
     if (maxPlayers > planetCount) return req.reject(400, 'More players than planets')
+    // A planet that outruns a fleet can never be reached.
+    if (planetDrift < 0) return req.reject(400, 'planetDrift cannot be negative')
+    if (Number(planetDrift) >= Number(shipSpeed)) {
+      return req.reject(400, 'planetDrift must stay below shipSpeed - planets would outrun every fleet')
+    }
 
     const ID = cds.utils.uuid()
     await INSERT.into(Games).entries({
@@ -54,6 +60,7 @@ module.exports = class GameService extends cds.ApplicationService {
       mapHeight,
       shipSpeed,
       shipCost,
+      planetDrift,
       seed: seed ?? Math.floor(Math.random() * 0x7fffffff)
     })
 
@@ -107,6 +114,7 @@ module.exports = class GameService extends cds.ApplicationService {
       planetCount: game.planetCount,
       mapWidth: game.mapWidth,
       mapHeight: game.mapHeight,
+      planetDrift: game.planetDrift,
       seed: game.seed
     })
     const homes = assignHomePlanets(generated, players.length, {
