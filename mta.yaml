@@ -1,6 +1,6 @@
 _schema-version: 3.3.0
 ID: galactic-empire
-version: 0.1.0
+version: 0.2.0
 description: "Galactic Empire - turn-based multiplayer space conquest"
 parameters:
   enable-parallel-deployments: true
