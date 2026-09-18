@@ -35,12 +35,13 @@ and `admin` (roles `player`, `gamemaster`). Password is empty.
 | Resources | **Per planet.** Every owned planet accrues its own `production` into its own stockpile each turn. There is no empire treasury and no way to move resources between planets |
 | Ship building | Paid from the stockpile of the planet that builds them, `shipCost` each; ships join that planet's garrison at the start of the next turn |
 | Conquest | A captured planet keeps its stockpile - whoever holds the planet holds what is stored there. Unowned planets produce nothing, so a fresh conquest starts empty |
-| Movement | Fleets travel `shipSpeed` distance units per turn, ETA fixed at launch, no recall. A fleet tracks its **target planet**, not a coordinate, so a drifting target does not change the arrival turn |
+| Movement | Fleets travel `shipSpeed` distance units per turn, ETA fixed at launch, no recall. A fleet tracks its **target planet**, not a coordinate, so a drifting target does not change the arrival turn. Only the special rules below can change a course after launch |
 | Combat | `attackers x rnd(0.7..1.3)` vs `defenders x (rnd(0.7..1.3) + 0.1)`, loser is wiped out |
 | Natives | Static defenders, no growth, no ships |
 | Fog of war | Positions always visible; name, owner, production and garrison only after the planet was reached or owned. A stockpile is never visible on a planet that is not yours |
 | Star birth | With `starBirthChance` > 0 a new, uninhabited star may ignite each turn. It is visible to everyone at once but explored by nobody |
 | Supernova | With `supernovaChance` > 0 a star may explode each turn, home worlds included. Garrison, natives and stockpile burn with it; a burnt out remnant stays on the map and can never be targeted again |
+| Fleet diversion | With `diversionChance` > 0 an asteroid field may throw a fleet still in transit onto one of the three planets nearest to its target. Fleets landing this turn are already through |
 | Turn end | All players ready, or `turnLimitSec` elapsed (background timer) |
 | Elimination | No planets and no fleets left; last player standing wins |
 
@@ -62,13 +63,20 @@ rule (`seed` mixed with the turn number), so a game can be replayed exactly.
 ## Special rules
 
 Optional, off by default, configured per game. Each one is a probability between
-0 and 1 that is rolled once per turn - `0` disables the rule completely, `1`
-fires it every single turn.
+0 and 1 - `0` disables the rule completely, `1` fires it every single time it is
+rolled. Star birth and supernova roll once per turn, fleet diversion once per
+fleet and turn.
+
+They are rolled from the same seeded stream as combat, and only when the rule is
+switched on, so turning one off cannot shift the rolls of a game that never uses
+it. Report kinds `STARBIRTH`, `SUPERNOVA` and `DIVERSION` show up in
+`MyMessages` and in the `report` event.
 
 | Setting | Rule |
 |---|---|
 | `starBirthChance` | A new star ignites in the void. It gets the next free number, an unused name, a random production of 1-10 and its own drift, but no natives and no owner. Everybody is told a star was born; nobody knows anything else about it until ships get there |
 | `supernovaChance` | One star, picked uniformly from those still alive, is wiped out. Every star is fair game - a player who loses his last planet to it is eliminated on the spot. Everybody sees the flash, but only those who had scouted the star learn which one it was |
+| `diversionChance` | Rolled **per fleet, per turn** against every fleet that is still flying at the end of the turn. A hit bends the course onto a neighbouring star. A fleet that lands this turn is past the fields, so single turn hops are always reliable |
 
 Names come from the same pool as the generated galaxy. Once the pool is spent -
 more than 150 stars in one game - newborns fall back to `Nova 1`, `Nova 2`, ...
@@ -77,11 +85,22 @@ A destroyed planet is flagged, never deleted: fleets, intel and old turn reports
 still reference it, and the star map needs the remnant to keep drawing the routes
 that lead past it. `sendFleet`, `buildShips` and `route` reject a remnant.
 
-Fleets already on their way to a star that explodes are not lost - they are
-pushed onto one of the three planets nearest to the target they lost, picked at
-random, and the detour costs them at least one extra turn. The owner is told
-where his ships end up in the same turn's report. If there is no star left to
-divert them to, the ships are lost with the target.
+Both a supernova at the target and an asteroid field re-target a fleet the same
+way: onto one of the three planets nearest to the star it lost, picked at random,
+with the detour added on top of the leg it was already flying - at least one
+extra turn, whatever the geometry says. The owner is told where his ships ended
+up in the same turn's report; they are out of his hands, not out of his sight.
+If there is no star left to divert to, the ships are lost with the target.
+
+A fleet can be caught again on the next leg. With a high `diversionChance` on a
+long route a fleet can therefore be pushed around for many turns - that is the
+rule working, not a bug, but it makes 0.1-0.2 a saner setting than 0.5. The map
+draws the route from the original origin to the current target, so a diverted
+fleet marker jumps onto its new line.
+
+`origin` on a fleet is where it launched and never changes; `destination`,
+`arrivalTurn` and `distance` do, which is why `MyFleets` is worth re-reading
+after every turn.
 
 ## API
 
@@ -91,7 +110,7 @@ Base path `/odata/v4/game`, all endpoints require role `player`.
 
 | Action | Payload | Returns |
 |---|---|---|
-| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `planetDrift`, `starBirthChance`, `supernovaChance`, `seed` | game UUID (creator joins automatically) |
+| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `planetDrift`, `starBirthChance`, `supernovaChance`, `diversionChance`, `seed` | game UUID (creator joins automatically) |
 | `joinGame` | `game`, `name` | player UUID |
 | `startGame` | `game` | `true` - creator or `gamemaster` only |
 | `deleteGame` | `game` | `true` - creator or `gamemaster` only, any status, no undo |

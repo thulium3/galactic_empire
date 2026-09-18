@@ -544,3 +544,144 @@ test('a supernova on the last planet eliminates its owner', async () => {
   assert.equal(loss.length, 1)
   assert.match(loss[0].text, /went up in a supernova/)
 })
+
+test('asteroid fields throw fleets in transit onto another planet', async () => {
+  // diversionChance 1 bends the course of every fleet that is still flying.
+  const game = (await post('/createGame', {
+    name: 'Asteroids', planetCount: 16, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 800, mapHeight: 800, shipSpeed: 60, planetDrift: 0,
+    diversionChance: 1, seed: 77007
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const map = (await fn('starMap', { game }, 'alice')).value
+  const home = map.find(p => p.mine)
+  const routes = await Promise.all(map.filter(p => p.number !== home.number).map(async p => ({
+    number: p.number, ...(await fn('route', { game, origin: home.number, destination: p.number }, 'alice'))
+  })))
+  const far = routes.sort((a, b) => b.turns - a.turns)[0]
+  assert.ok(far.turns >= 3, 'a long enough trip to be caught mid flight')
+
+  const sent = await post('/sendFleet', { game, origin: home.number, destination: far.number, ships: 10 }, 'alice')
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  const report = (await get(`/MyMessages?$filter=game_ID eq ${game} and kind eq 'DIVERSION'`, 'alice')).value
+  assert.equal(report.length, 1, 'the fleet was thrown off course on the very first leg')
+  assert.match(report[0].text, /asteroid field threw 10 ships bound for #\d+ off course/i)
+
+  const fleet = (await get(`/MyFleets?$filter=game_ID eq ${game}`, 'alice')).value[0]
+  assert.ok(fleet, 'the ships are still flying, just not where they were sent')
+  assert.notEqual(fleet.destinationNumber, far.number)
+  assert.equal(fleet.destinationNumber, report[0].planetNumber, 'the report names the new target')
+  assert.ok(fleet.arrivalTurn > sent.arrivalTurn, 'the detour costs time')
+  assert.ok(fleet.distance > sent.distance, 'and distance')
+
+  // The new target is a neighbour of the old one, not a random corner of the map.
+  const detour = await cds.tx(async () => {
+    const { Planets } = cds.entities('galactic')
+    const [old, now] = await Promise.all([
+      SELECT.one.from(Planets).where({ game_ID: game, number: far.number }),
+      SELECT.one.from(Planets).where({ game_ID: game, number: fleet.destinationNumber })
+    ])
+    const { torusDistance } = require('../srv/lib/geometry')
+    const others = await SELECT.from(Planets).where({ game_ID: game })
+    const distances = others
+      .filter(p => p.number !== far.number)
+      .map(p => torusDistance(p, old, 800, 800))
+      .sort((a, b) => a - b)
+    return { actual: torusDistance(now, old, 800, 800), thirdNearest: distances[2] }
+  })
+  assert.ok(detour.actual <= detour.thirdNearest + 0.01,
+    `diverted to one of the three nearest planets (${detour.actual} vs ${detour.thirdNearest})`)
+
+  // It keeps happening as long as the ships are in transit, and the fleet always
+  // ends up somewhere real - it never lands on a wreck or vanishes.
+  for (let turn = 0; turn < 4; turn++) {
+    await post('/endTurn', { game }, 'alice')
+    await post('/endTurn', { game }, 'bob')
+  }
+  const reports = (await get(`/MyMessages?$filter=game_ID eq ${game} and kind eq 'DIVERSION'`, 'alice')).value
+  assert.ok(reports.length > 1, 'an asteroid field can catch the same fleet again')
+})
+
+test('a fleet about to land is past the asteroid fields', async () => {
+  const game = (await post('/createGame', {
+    name: 'Last leg', planetCount: 16, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 600, mapHeight: 600, shipSpeed: 5000, planetDrift: 0,
+    diversionChance: 1, seed: 313
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  // shipSpeed is huge, so every trip is a single turn and lands on arrival.
+  const map = (await fn('starMap', { game }, 'alice')).value
+  const home = map.find(p => p.mine)
+  const target = map.find(p => p.number !== home.number)
+
+  const sent = await post('/sendFleet', { game, origin: home.number, destination: target.number, ships: 20 }, 'alice')
+  assert.equal(sent.arrivalTurn, 2)
+
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  assert.equal((await get(`/MyMessages?$filter=game_ID eq ${game} and kind eq 'DIVERSION'`, 'alice')).value.length, 0)
+  const arrived = (await get(`/MyMessages?$filter=game_ID eq ${game} and turn eq 2`, 'alice')).value
+  assert.ok(arrived.some(m => m.planetNumber === target.number && ['ARRIVAL', 'CAPTURE', 'COMBAT'].includes(m.kind)),
+    'the ships reached the planet they were sent to')
+  assert.equal((await get(`/MyFleets?$filter=game_ID eq ${game}`, 'alice')).value.length, 0)
+
+  await assert.rejects(() => post('/createGame', {
+    name: 'Nonsense', planetCount: 8, maxPlayers: 2, diversionChance: -0.5, seed: 1
+  }, 'alice'), /diversionChance must be a probability between 0 and 1/)
+})
+
+test('all three special rules together keep the galaxy consistent', async () => {
+  const { Planets, Fleets, Games } = cds.entities('galactic')
+
+  const game = (await post('/createGame', {
+    name: 'Chaos', planetCount: 20, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 900, mapHeight: 900, shipSpeed: 80, planetDrift: 4,
+    starBirthChance: 0.5, supernovaChance: 0.5, diversionChance: 0.4, seed: 31415
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  for (let turn = 0; turn < 15; turn++) {
+    const state = await get(`/Games(${game})`, 'alice')
+    if (state.status !== 'RUNNING') break
+
+    // Keep ships moving so there is always something to divert.
+    for (const who of ['alice', 'bob']) {
+      const map = (await fn('starMap', { game }, who)).value
+      const from = map.find(p => p.mine && p.ships > 1)
+      const to = map.find(p => !p.mine && !p.destroyed)
+      if (from && to) await post('/sendFleet', { game, origin: from.number, destination: to.number, ships: 1 }, who)
+      await post('/endTurn', { game }, who).catch(() => { /* eliminated players cannot end a turn */ })
+    }
+
+    const [planets, fleets] = await cds.tx(() => Promise.all([
+      SELECT.from(Planets).where({ game_ID: game }),
+      SELECT.from(Fleets).where({ game_ID: game, arrived: false })
+    ]))
+    const byId = new Map(planets.map(p => [p.ID, p]))
+
+    assert.equal(new Set(planets.map(p => p.number)).size, planets.length, 'planet numbers stay unique')
+    assert.equal(new Set(planets.map(p => p.name)).size, planets.length, 'planet names stay unique')
+    for (const planet of planets.filter(p => p.destroyed)) {
+      assert.equal(planet.owner_ID, null, 'a remnant has no owner')
+      assert.equal(planet.ships + planet.natives + planet.resources + planet.production, 0,
+        'and nothing left on it')
+    }
+    for (const fleet of fleets) {
+      assert.equal(byId.get(fleet.destination_ID)?.destroyed, false, 'no fleet flies at a wreck')
+      assert.ok(fleet.arrivalTurn > fleet.departureTurn, 'no fleet arrives before it left')
+    }
+  }
+
+  const end = await get(`/Games(${game})`, 'alice')
+  assert.ok(['RUNNING', 'FINISHED'].includes(end.status))
+  assert.ok((await cds.tx(() => SELECT.from(Planets).where({ game_ID: game, destroyed: true }))).length > 0,
+    'stars did explode along the way')
+})

@@ -29,6 +29,7 @@ entity Games : cuid, managed {
   // ---- optional special rules, probability per turn, 0 = rule is off ----
   starBirthChance : Decimal(4, 3) default 0;    // a new star ignites somewhere in the void
   supernovaChance : Decimal(4, 3) default 0;    // a star explodes and is wiped off the map
+  diversionChance : Decimal(4, 3) default 0;    // per fleet: asteroid fields throw it off course
 
   players  : Composition of many Players  on players.game  = $self;
   planets  : Composition of many Planets  on planets.game  = $self;

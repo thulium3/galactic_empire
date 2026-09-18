@@ -11,7 +11,7 @@ const { publish } = require('./event-bus')
  * Advances a game by one turn:
  *   1. every planet drifts one step along its own velocity
  *   2. special rules fire - a star may ignite, a star may explode
- *   3. fleets that lost their course are re-targeted
+ *   3. fleets are thrown off course by asteroid fields and dead targets
  *   4. ships built last turn become available
  *   5. every owned planet produces into its own stockpile
  *   6. arriving fleets land, fight and capture
@@ -228,17 +228,32 @@ async function playersKnowing (planet, owner) {
 }
 
 /**
- * Re-targets fleets that lost their course. A fleet aimed at a star that no
- * longer exists has to go somewhere, so it is pushed onto a neighbouring one -
- * the detour costs it at least one extra turn.
+ * Re-targets fleets that lost their course, for either of two reasons:
  *
- * Its owner is told right away, including where the ships end up: they are out
- * of his hands, not out of his sight.
+ *   - the star they were aiming at went up in a supernova, so they have to go
+ *     somewhere else whether the rule is switched on or not
+ *   - `diversionChance` rolled against them: an asteroid field bent the course
+ *
+ * Either way they are pushed onto one of the planets nearest to the target they
+ * lost, and the detour costs at least one extra turn. The owner is told in the
+ * same report, new target included: his ships are out of his hands, not out of
+ * his sight.
+ *
+ * A fleet that lands this turn is already through: asteroid fields sit on the
+ * route, not in the target system. Short hops are therefore always reliable.
  */
 function resolveDiversions ({ game, fleets, planets, planetsById, playersById, rng, nextTurn, messages }) {
+  const chance = Number(game.diversionChance) || 0
+
   for (const fleet of fleets) {
     const target = planetsById.get(fleet.destination_ID)
-    if (!target?.destroyed) continue
+    if (!target) continue
+
+    const lostTarget = !!target.destroyed
+    const stillFlying = fleet.arrivalTurn > nextTurn
+    // The roll only happens when the rule is on, so switching it off cannot
+    // shift the RNG stream of a game that never uses it.
+    if (!lostTarget && !(stillFlying && chance > 0 && rng() < chance)) continue
 
     const player = playersById.get(fleet.owner_ID)
     const detour = divertTarget({ target, planets, game, rng })
@@ -255,9 +270,11 @@ function resolveDiversions ({ game, fleets, planets, planetsById, playersById, r
 
     const arrivalTurn = divertedArrival({ fleet, detour: detour.detour, game, nextTurn })
     if (player) {
+      const cause = lostTarget
+        ? `The supernova at #${target.number} took the target of ${fleet.ships} ships.`
+        : `An asteroid field threw ${fleet.ships} ships bound for #${target.number} off course.`
       messages.push(message(game, player, nextTurn, 'DIVERSION', detour.planet,
-        `The supernova at #${target.number} took the target of ${fleet.ships} ships. ` +
-        `They now head for #${detour.planet.number}, arriving turn ${arrivalTurn}.`))
+        `${cause} They now head for #${detour.planet.number}, arriving turn ${arrivalTurn}.`))
     }
     divert(fleet, detour, arrivalTurn)
   }

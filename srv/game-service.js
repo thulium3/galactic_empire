@@ -32,7 +32,7 @@ module.exports = class GameService extends cds.ApplicationService {
     const {
       name, planetCount = 99, maxPlayers = 8, turnLimitSec = 300,
       mapWidth = 1000, mapHeight = 1000, shipSpeed = 120, shipCost = 10,
-      planetDrift = 5, starBirthChance = 0, supernovaChance = 0, seed
+      planetDrift = 5, starBirthChance = 0, supernovaChance = 0, diversionChance = 0, seed
     } = req.data
 
     if (!name) return req.reject(400, 'Game name is required')
@@ -46,7 +46,7 @@ module.exports = class GameService extends cds.ApplicationService {
     if (Number(planetDrift) >= Number(shipSpeed)) {
       return req.reject(400, 'planetDrift must stay below shipSpeed - planets would outrun every fleet')
     }
-    const badChance = this.invalidChance({ starBirthChance, supernovaChance })
+    const badChance = this.invalidChance({ starBirthChance, supernovaChance, diversionChance })
     if (badChance) return req.reject(400, `${badChance} must be a probability between 0 and 1`)
 
     const ID = cds.utils.uuid()
@@ -65,6 +65,7 @@ module.exports = class GameService extends cds.ApplicationService {
       planetDrift,
       starBirthChance,
       supernovaChance,
+      diversionChance,
       seed: seed ?? Math.floor(Math.random() * 0x7fffffff)
     })
 

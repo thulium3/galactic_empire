@@ -358,6 +358,7 @@ button.danger:hover:not(:disabled) { background: var(--danger); color: #0b0e14; 
 .report-list li.ARRIVAL { border-left-color: var(--accent); }
 .report-list li.STARBIRTH { border-left-color: #7ad7ff; }
 .report-list li.SUPERNOVA { border-left-color: #ff7b3d; }
+.report-list li.DIVERSION { border-left-color: #c58cff; }
 .report-list .turn-tag { color: var(--muted); font-size: 10px; }
 
 .side-foot { padding-top: 12px; border-top: 1px solid var(--line); text-align: center; }

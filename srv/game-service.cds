@@ -11,7 +11,7 @@ service GameService @(requires: 'player') {
   entity Games as projection on db.Games {
     ID, name, status, currentTurn, turnDeadline, turnLimitSec,
     maxPlayers, planetCount, mapWidth, mapHeight, shipSpeed, shipCost, planetDrift,
-    starBirthChance, supernovaChance, createdAt, createdBy,
+    starBirthChance, supernovaChance, diversionChance, createdAt, createdBy,
     winner.name as winnerName : String(60),
     players : redirected to Participants
   };
@@ -97,6 +97,7 @@ service GameService @(requires: 'player') {
     planetDrift  : Decimal(9,2),
     starBirthChance : Decimal(4,3),
     supernovaChance : Decimal(4,3),
+    diversionChance : Decimal(4,3),
     seed         : Integer
   ) returns UUID;
 

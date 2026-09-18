@@ -174,6 +174,7 @@ $('create-btn').addEventListener('click', async () => {
       planetDrift: Number($('new-drift').value),
       starBirthChance: Number($('new-starbirth').value),
       supernovaChance: Number($('new-supernova').value),
+      diversionChance: Number($('new-diversion').value),
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT
     })
