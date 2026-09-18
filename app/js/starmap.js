@@ -119,8 +119,11 @@ export class StarMap {
 
     for (const planet of planets) {
       const explored = planet.explored
-      const radius = explored ? 8 + Math.min(planet.production ?? 0, 10) * 0.55 : 8
+      // A remnant is drawn small: it is a landmark and a route anchor, not a
+      // destination any more.
+      const radius = planet.destroyed ? 5 : (explored ? 8 + Math.min(planet.production ?? 0, 10) * 0.55 : 8)
       const classes = ['planet']
+      if (planet.destroyed) classes.push('destroyed')
       if (!explored) classes.push('unexplored')
       if (planet.mine) classes.push('mine')
       if (planet.number === selection.origin) classes.push('selected')

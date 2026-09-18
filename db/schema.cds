@@ -3,7 +3,7 @@ namespace galactic;
 using { cuid, managed } from '@sap/cds/common';
 
 type GameStatus  : String(10) enum { LOBBY; RUNNING; FINISHED; };
-type MessageKind : String(20) enum { ARRIVAL; COMBAT; CAPTURE; LOSS; SYSTEM; STARBIRTH; };
+type MessageKind : String(20) enum { ARRIVAL; COMBAT; CAPTURE; LOSS; SYSTEM; STARBIRTH; SUPERNOVA; DIVERSION; };
 
 /**
  * A single match. Holds all rules and the turn clock.
@@ -28,6 +28,7 @@ entity Games : cuid, managed {
 
   // ---- optional special rules, probability per turn, 0 = rule is off ----
   starBirthChance : Decimal(4, 3) default 0;    // a new star ignites somewhere in the void
+  supernovaChance : Decimal(4, 3) default 0;    // a star explodes and is wiped off the map
 
   players  : Composition of many Players  on players.game  = $self;
   planets  : Composition of many Planets  on planets.game  = $self;
@@ -62,6 +63,10 @@ entity Players : cuid, managed {
  *
  * Planets drift: `x`/`y` advance by `vx`/`vy` every turn and wrap around the
  * torus. The velocity is fixed for the lifetime of the planet.
+ *
+ * A planet wiped out by a supernova is flagged `destroyed` instead of being
+ * deleted: fleets, intel and turn reports still point at it, and the star map
+ * needs the burnt out remnant to keep drawing the routes that lead there.
  */
 entity Planets : cuid, managed {
   game         : Association to Games not null;
@@ -77,10 +82,13 @@ entity Planets : cuid, managed {
   natives      : Integer default 0;             // defenders when unowned
   ships        : Integer default 0;             // stationed ships of the owner
   pendingShips : Integer default 0;             // built this turn, available next turn
+  destroyed    : Boolean default false;         // burnt out by a supernova, no longer a target
 }
 
 /**
- * Ships in transit. Immutable once dispatched - no recall, no re-routing.
+ * Ships in transit. The owner cannot recall or re-route them; the galaxy can -
+ * an asteroid field or a supernova at the target changes `destination` and
+ * `arrivalTurn` mid flight.
  */
 entity Fleets : cuid, managed {
   game          : Association to Games   not null;

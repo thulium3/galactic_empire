@@ -72,6 +72,9 @@ const NATIVE_COLOR = '#a9a9a9'
 /** Unexplored planets on the star map. */
 const UNKNOWN_COLOR = '#4a4a4a'
 
+/** What a supernova leaves behind - darker than the void around it. */
+const DESTROYED_COLOR = '#241a1a'
+
 module.exports = {
   PLANET_NAMES,
   STAR_NAMES,
@@ -79,5 +82,6 @@ module.exports = {
   BANDS,
   PLAYER_COLORS,
   NATIVE_COLOR,
-  UNKNOWN_COLOR
+  UNKNOWN_COLOR,
+  DESTROYED_COLOR
 }

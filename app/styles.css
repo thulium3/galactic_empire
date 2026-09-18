@@ -232,6 +232,12 @@ button.danger:hover:not(:disabled) { background: var(--danger); color: #0b0e14; 
 }
 .planet-num.faint { fill: #9aa3c0; }
 .planet.unexplored .planet-body { stroke: #2c3352; stroke-width: 1; }
+
+/* Supernova remnant: still a landmark, no longer a destination. */
+.planet.destroyed { cursor: not-allowed; opacity: .6; }
+.planet.destroyed .planet-body { stroke: #5a3626; stroke-width: 1.5; stroke-dasharray: 3 2; }
+.planet.destroyed:hover .planet-body { stroke: #8a4f38; stroke-width: 2; }
+.planet.destroyed .planet-num { fill: #7c5f52; }
 .planet:hover .planet-body { stroke: #fff; stroke-width: 2; }
 .planet.mine .planet-body { stroke: rgba(255, 255, 255, .55); stroke-width: 1.5; }
 .planet.selected .planet-body { stroke: #fff; stroke-width: 3; }
@@ -351,6 +357,7 @@ button.danger:hover:not(:disabled) { background: var(--danger); color: #0b0e14; 
 .report-list li.COMBAT { border-left-color: #f0a92c; }
 .report-list li.ARRIVAL { border-left-color: var(--accent); }
 .report-list li.STARBIRTH { border-left-color: #7ad7ff; }
+.report-list li.SUPERNOVA { border-left-color: #ff7b3d; }
 .report-list .turn-tag { color: var(--muted); font-size: 10px; }
 
 .side-foot { padding-top: 12px; border-top: 1px solid var(--line); text-align: center; }

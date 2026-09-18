@@ -173,6 +173,7 @@ $('create-btn').addEventListener('click', async () => {
       shipSpeed: Number($('new-speed').value),
       planetDrift: Number($('new-drift').value),
       starBirthChance: Number($('new-starbirth').value),
+      supernovaChance: Number($('new-supernova').value),
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT
     })
@@ -348,6 +349,7 @@ function renderReports () {
 
 function onPlanetClick (planet) {
   if (state.game.status !== 'RUNNING' || state.me.turnDone) return
+  if (planet.destroyed) return toast('Nothing but debris out there - a supernova took that star.')
 
   if (state.selection.origin === planet.number) {
     clearSelection()
@@ -492,7 +494,9 @@ function showTooltip (planet, event) {
   const tip = $('tooltip')
   const rows = []
 
-  if (planet.explored) {
+  if (planet.destroyed) {
+    rows.push(['state', 'destroyed by a supernova'])
+  } else if (planet.explored) {
     if (planet.ownerName) rows.push(['owner', planet.ownerName])
     rows.push(['production', `${planet.production}/turn`])
     if (planet.mine) rows.push(['resources', planet.resources ?? 0])
@@ -508,7 +512,9 @@ function showTooltip (planet, event) {
   dot.className = 'dot'
   dot.style.background = planet.color
   const title = document.createElement('span')
-  title.textContent = planet.explored ? planet.name : 'unexplored'
+  title.textContent = planet.destroyed
+    ? (planet.name ? `${planet.name} - remnant` : 'remnant')
+    : (planet.explored ? planet.name : 'unexplored')
   const num = document.createElement('span')
   num.className = 'tt-num'
   num.textContent = `#${planet.number}`
@@ -528,7 +534,7 @@ function showTooltip (planet, event) {
   }
 
   // Intel ages: what you saw three turns ago may not be true any more.
-  if (planet.explored && !planet.mine && planet.lastSeenTurn < state.game.currentTurn) {
+  if (planet.explored && !planet.mine && !planet.destroyed && planet.lastSeenTurn < state.game.currentTurn) {
     const stale = document.createElement('p')
     stale.className = 'stale'
     stale.textContent = `last seen turn ${planet.lastSeenTurn}`

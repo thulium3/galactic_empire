@@ -214,3 +214,57 @@ test('star birth falls back to numbered names once the pool is spent', () => {
   planets.push(first)
   assert.equal(igniteStar({ planets, game, rng: createRng(3) }).name, 'Nova 2')
 })
+
+test('a supernova only fires when the rule is switched on, and spares nobody', () => {
+  const { pickSupernova } = require('../srv/lib/anomalies')
+  const { createRng } = require('../srv/lib/rng')
+
+  const planets = [
+    { ID: 'a', number: 1, owner_ID: 'alice' },
+    { ID: 'b', number: 2, owner_ID: null },
+    { ID: 'c', number: 3, destroyed: true }
+  ]
+
+  const off = createRng(11)
+  for (let i = 0; i < 50; i++) assert.equal(pickSupernova({ planets, game: { supernovaChance: 0 }, rng: off }), null)
+
+  const hit = new Set()
+  const rng = createRng(11)
+  for (let i = 0; i < 200; i++) hit.add(pickSupernova({ planets, game: { supernovaChance: 1 }, rng }).ID)
+  assert.deepEqual([...hit].sort(), ['a', 'b'], 'owned worlds are fair game, a remnant is not hit twice')
+
+  assert.equal(pickSupernova({ planets: [planets[2]], game: { supernovaChance: 1 }, rng }), null,
+    'nothing left to explode')
+})
+
+test('a diverted fleet lands on a neighbour of its lost target and pays for the detour', () => {
+  const { divertTarget, divertedArrival, DIVERSION_NEIGHBOURS } = require('../srv/lib/anomalies')
+  const { createRng } = require('../srv/lib/rng')
+
+  const game = { mapWidth: 1000, mapHeight: 1000, shipSpeed: 100 }
+  const target = { ID: 't', number: 1, x: 500, y: 500 }
+  const planets = [
+    target,
+    { ID: 'n1', number: 2, x: 520, y: 500 },   //  20 away
+    { ID: 'n2', number: 3, x: 500, y: 560 },   //  60 away
+    { ID: 'n3', number: 4, x: 400, y: 500 },   // 100 away
+    { ID: 'far', number: 5, x: 0, y: 0 },      // way out
+    { ID: 'gone', number: 6, x: 505, y: 500, destroyed: true }
+  ]
+
+  const rng = createRng(5)
+  const picked = new Set()
+  for (let i = 0; i < 200; i++) picked.add(divertTarget({ target, planets, game, rng }).planet.ID)
+  assert.equal(picked.size, DIVERSION_NEIGHBOURS)
+  assert.deepEqual([...picked].sort(), ['n1', 'n2', 'n3'],
+    'only the nearest neighbours, never the remnant and never the far side of the map')
+
+  // The detour is added on top of the leg the fleet is already flying.
+  const fleet = { arrivalTurn: 9 }
+  assert.equal(divertedArrival({ fleet, detour: 20, game, nextTurn: 4 }), 10, 'short detour, one extra turn')
+  assert.equal(divertedArrival({ fleet, detour: 250, game, nextTurn: 4 }), 12)
+  // A fleet that was due this very turn is pushed back, never pulled forward.
+  assert.equal(divertedArrival({ fleet: { arrivalTurn: 4 }, detour: 1, game, nextTurn: 4 }), 5)
+  assert.equal(divertedArrival({ fleet: { arrivalTurn: 2 }, detour: 1, game, nextTurn: 4 }), 5,
+    'an overdue fleet still leaves from the current turn')
+})

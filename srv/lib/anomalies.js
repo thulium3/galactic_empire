@@ -1,6 +1,7 @@
 'use strict'
 
 const { findFreePosition, driftVelocity, spacing, round2 } = require('./galaxy')
+const { torusDistance, travelTurns } = require('./geometry')
 const { PLANET_NAMES } = require('./names')
 
 /**
@@ -14,6 +15,13 @@ const { PLANET_NAMES } = require('./names')
 
 /** A newborn star is uninhabited - nothing had time to settle there yet. */
 const NEWBORN_NATIVES = 0
+
+/**
+ * How many of the planets nearest to the lost target a thrown off fleet may end
+ * up on. Keeping it small means a fleet drifts off course, it does not get
+ * catapulted across the galaxy.
+ */
+const DIVERSION_NEIGHBOURS = 3
 
 /**
  * Rolls for a new star igniting in the void between the existing ones.
@@ -57,4 +65,49 @@ function freeName (planets, rng) {
   }
 }
 
-module.exports = { igniteStar, NEWBORN_NATIVES }
+
+/**
+ * Rolls for a supernova and returns the planet it wipes out, or null.
+ *
+ * Every star is fair game, home worlds included: whoever sits there loses the
+ * garrison, the stockpile and the planet, and may well be eliminated by it.
+ */
+function pickSupernova ({ planets, game, rng }) {
+  const chance = Number(game.supernovaChance) || 0
+  if (chance <= 0 || rng() >= chance) return null
+
+  const live = planets.filter(p => !p.destroyed)
+  return live.length ? rng.pick(live) : null
+}
+
+/**
+ * Where a fleet that lost its course ends up: one of the planets closest to the
+ * target it was aiming at, picked at random. Returns null when there is nothing
+ * left to divert it to.
+ *
+ * Ties are broken by ID so the pick stays reproducible - two planets at exactly
+ * the same distance must not depend on the order the database handed them out.
+ */
+function divertTarget ({ target, planets, game, rng }) {
+  const neighbours = planets
+    .filter(p => !p.destroyed && p.ID !== target.ID)
+    .map(p => ({ planet: p, detour: torusDistance(p, target, game.mapWidth, game.mapHeight) }))
+    .sort((a, b) => a.detour - b.detour || String(a.planet.ID).localeCompare(String(b.planet.ID)))
+    .slice(0, DIVERSION_NEIGHBOURS)
+
+  return neighbours.length ? rng.pick(neighbours) : null
+}
+
+/**
+ * The turn a diverted fleet now lands on. It first flies the leg it was already
+ * on and then the detour, so being thrown off course always costs time - never
+ * less than one extra turn, whatever the geometry says.
+ */
+function divertedArrival ({ fleet, detour, game, nextTurn }) {
+  return Math.max(nextTurn, fleet.arrivalTurn) + travelTurns(detour, Number(game.shipSpeed))
+}
+
+module.exports = {
+  igniteStar, pickSupernova, divertTarget, divertedArrival,
+  NEWBORN_NATIVES, DIVERSION_NEIGHBOURS
+}

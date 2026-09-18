@@ -11,7 +11,7 @@ service GameService @(requires: 'player') {
   entity Games as projection on db.Games {
     ID, name, status, currentTurn, turnDeadline, turnLimitSec,
     maxPlayers, planetCount, mapWidth, mapHeight, shipSpeed, shipCost, planetDrift,
-    starBirthChance, createdAt, createdBy,
+    starBirthChance, supernovaChance, createdAt, createdBy,
     winner.name as winnerName : String(60),
     players : redirected to Participants
   };
@@ -62,6 +62,7 @@ service GameService @(requires: 'player') {
     natives      : Integer;
     pendingShips : Integer;
     lastSeenTurn : Integer;
+    destroyed    : Boolean;          // burnt out remnant, cannot be targeted
   }
 
   type FleetInfo {
@@ -95,6 +96,7 @@ service GameService @(requires: 'player') {
     shipCost     : Integer,
     planetDrift  : Decimal(9,2),
     starBirthChance : Decimal(4,3),
+    supernovaChance : Decimal(4,3),
     seed         : Integer
   ) returns UUID;
 

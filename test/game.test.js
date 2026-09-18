@@ -427,3 +427,120 @@ test('without the rule the galaxy keeps exactly the stars it started with', asyn
     name: 'Impossible', planetCount: 8, maxPlayers: 2, starBirthChance: 2, seed: 1
   }, 'alice'), /probability between 0 and 1/)
 })
+
+test('a supernova wipes a star out, reroutes the fleets aimed at it and leaves a remnant', async () => {
+  // supernovaChance 1 blows up exactly one star per turn.
+  const game = (await post('/createGame', {
+    name: 'Nova', planetCount: 14, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 800, mapHeight: 800, shipSpeed: 60, planetDrift: 0,
+    supernovaChance: 1, seed: 90210
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const before = (await fn('starMap', { game }, 'alice')).value
+  const home = before.find(p => p.mine)
+
+  // A slow ship and a far target: the fleet is still in flight when stars start
+  // exploding, so a diversion has something to work on.
+  const routes = await Promise.all(before.filter(p => p.number !== home.number).map(async p => ({
+    number: p.number, ...(await fn('route', { game, origin: home.number, destination: p.number }, 'alice'))
+  })))
+  const far = routes.sort((a, b) => b.turns - a.turns)[0]
+  assert.ok(far.turns >= 3, 'the target is several turns away')
+  await post('/sendFleet', { game, origin: home.number, destination: far.number, ships: 10 }, 'alice')
+
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  const after = (await fn('starMap', { game }, 'alice')).value
+  assert.equal(after.length, 14, 'the remnant keeps its place on the map')
+  const wrecks = after.filter(p => p.destroyed)
+  assert.equal(wrecks.length, 1, 'exactly one star went up')
+
+  const wreck = wrecks[0]
+  assert.equal(wreck.mine, false)
+  assert.equal(wreck.ownerName, null)
+  assert.equal(wreck.ships, null)
+  assert.equal(wreck.natives, null)
+  assert.equal(wreck.resources, null, 'a remnant holds nothing')
+
+  // Everybody sees the flash, whether they had ever been there or not.
+  for (const who of ['alice', 'bob']) {
+    const flash = (await get(`/MyMessages?$filter=game_ID eq ${game} and kind eq 'SUPERNOVA'`, who)).value
+    assert.equal(flash.length, 1)
+    assert.equal(flash[0].planetNumber, wreck.number)
+  }
+
+  // Nothing can be sent to or built on a remnant any more.
+  await assert.rejects(
+    () => post('/sendFleet', { game, origin: home.number, destination: wreck.number, ships: 1 }, 'alice'),
+    /wiped out by a supernova/)
+  await assert.rejects(
+    () => fn('route', { game, origin: home.number, destination: wreck.number }, 'alice'),
+    /wiped out by a supernova/)
+
+  // Now aim the next blast at the star the fleet is flying to. Waiting for the
+  // rule to roll that planet would take half the galaxy with it first.
+  const { Games, Planets } = cds.entities('galactic')
+  await cds.tx(async () => {
+    await UPDATE(Games, game).with({ supernovaChance: 0 })
+    await UPDATE(Planets).set({ destroyed: true, owner_ID: null, ships: 0, natives: 0 })
+      .where({ game_ID: game, number: far.number })
+  })
+
+  const flying = (await get(`/MyFleets?$filter=game_ID eq ${game}`, 'alice')).value
+  assert.equal(flying.length, 1, 'the fleet is still on its way')
+  const promised = flying[0].arrivalTurn
+
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  const diverted = (await get(`/MyMessages?$filter=game_ID eq ${game} and kind eq 'DIVERSION'`, 'alice')).value
+  assert.equal(diverted.length, 1, 'the fleet aimed at an exploded star was rerouted')
+  assert.match(diverted[0].text, /supernova at #\d+ took the target/)
+
+  const rerouted = (await get(`/MyFleets?$filter=game_ID eq ${game}`, 'alice')).value[0]
+  assert.ok(rerouted, 'the ships survive, they just go somewhere else')
+  assert.notEqual(rerouted.destinationNumber, far.number, 'it is heading somewhere else now')
+  assert.ok(rerouted.arrivalTurn > promised, 'the detour costs it time')
+  assert.equal(diverted[0].planetNumber, rerouted.destinationNumber, 'the report names the new target')
+
+  const newTarget = (await fn('starMap', { game }, 'alice')).value
+    .find(p => p.number === rerouted.destinationNumber)
+  assert.equal(newTarget.destroyed, false, 'and not at another wreck')
+})
+
+test('a supernova on the last planet eliminates its owner', async () => {
+  const { Planets, Games, Players } = cds.entities('galactic')
+
+  const game = (await post('/createGame', {
+    name: 'Last stand', planetCount: 6, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 400, mapHeight: 400, shipSpeed: 200, planetDrift: 0, seed: 1234
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  // Only the two home worlds are left, so every blast now takes one of them and
+  // with it the empire that sits there. Which one is up to the seed.
+  await cds.tx(async () => {
+    await UPDATE(Planets).set({ destroyed: true, owner_ID: null, ships: 0, natives: 0 })
+      .where({ game_ID: game, owner_ID: null })
+    await UPDATE(Games, game).with({ supernovaChance: 1 })
+  })
+
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  const finished = await get(`/Games(${game})`, 'alice')
+  assert.equal(finished.status, 'FINISHED', 'losing the last planet ends the game')
+
+  const states = await cds.tx(() => SELECT.from(Players).where({ game_ID: game }))
+  const dead = states.filter(p => p.eliminated)
+  assert.equal(dead.length, 1, 'exactly one empire went up with its home world')
+  assert.equal(finished.winnerName, states.find(p => !p.eliminated).name)
+
+  const loss = (await get(`/MyMessages?$filter=game_ID eq ${game} and kind eq 'LOSS'`, dead[0].user)).value
+  assert.equal(loss.length, 1)
+  assert.match(loss[0].text, /went up in a supernova/)
+})

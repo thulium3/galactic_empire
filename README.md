@@ -40,6 +40,7 @@ and `admin` (roles `player`, `gamemaster`). Password is empty.
 | Natives | Static defenders, no growth, no ships |
 | Fog of war | Positions always visible; name, owner, production and garrison only after the planet was reached or owned. A stockpile is never visible on a planet that is not yours |
 | Star birth | With `starBirthChance` > 0 a new, uninhabited star may ignite each turn. It is visible to everyone at once but explored by nobody |
+| Supernova | With `supernovaChance` > 0 a star may explode each turn, home worlds included. Garrison, natives and stockpile burn with it; a burnt out remnant stays on the map and can never be targeted again |
 | Turn end | All players ready, or `turnLimitSec` elapsed (background timer) |
 | Elimination | No planets and no fleets left; last player standing wins |
 
@@ -67,9 +68,20 @@ fires it every single turn.
 | Setting | Rule |
 |---|---|
 | `starBirthChance` | A new star ignites in the void. It gets the next free number, an unused name, a random production of 1-10 and its own drift, but no natives and no owner. Everybody is told a star was born; nobody knows anything else about it until ships get there |
+| `supernovaChance` | One star, picked uniformly from those still alive, is wiped out. Every star is fair game - a player who loses his last planet to it is eliminated on the spot. Everybody sees the flash, but only those who had scouted the star learn which one it was |
 
 Names come from the same pool as the generated galaxy. Once the pool is spent -
 more than 150 stars in one game - newborns fall back to `Nova 1`, `Nova 2`, ...
+
+A destroyed planet is flagged, never deleted: fleets, intel and old turn reports
+still reference it, and the star map needs the remnant to keep drawing the routes
+that lead past it. `sendFleet`, `buildShips` and `route` reject a remnant.
+
+Fleets already on their way to a star that explodes are not lost - they are
+pushed onto one of the three planets nearest to the target they lost, picked at
+random, and the detour costs them at least one extra turn. The owner is told
+where his ships end up in the same turn's report. If there is no star left to
+divert them to, the ships are lost with the target.
 
 ## API
 
@@ -79,7 +91,7 @@ Base path `/odata/v4/game`, all endpoints require role `player`.
 
 | Action | Payload | Returns |
 |---|---|---|
-| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `planetDrift`, `starBirthChance`, `seed` | game UUID (creator joins automatically) |
+| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `planetDrift`, `starBirthChance`, `supernovaChance`, `seed` | game UUID (creator joins automatically) |
 | `joinGame` | `game`, `name` | player UUID |
 | `startGame` | `game` | `true` - creator or `gamemaster` only |
 | `deleteGame` | `game` | `true` - creator or `gamemaster` only, any status, no undo |

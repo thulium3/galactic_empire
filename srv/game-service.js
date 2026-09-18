@@ -4,7 +4,7 @@ const cds = require('@sap/cds')
 const { generateGalaxy, assignHomePlanets } = require('./lib/galaxy')
 const { torusDistance, travelTurns } = require('./lib/geometry')
 const { resolveTurn } = require('./lib/turn-engine')
-const { PLAYER_COLORS, NATIVE_COLOR, UNKNOWN_COLOR } = require('./lib/names')
+const { PLAYER_COLORS, NATIVE_COLOR, UNKNOWN_COLOR, DESTROYED_COLOR } = require('./lib/names')
 const { startTurnTimer } = require('./lib/turn-timer')
 const { publish } = require('./lib/event-bus')
 
@@ -32,7 +32,7 @@ module.exports = class GameService extends cds.ApplicationService {
     const {
       name, planetCount = 99, maxPlayers = 8, turnLimitSec = 300,
       mapWidth = 1000, mapHeight = 1000, shipSpeed = 120, shipCost = 10,
-      planetDrift = 5, starBirthChance = 0, seed
+      planetDrift = 5, starBirthChance = 0, supernovaChance = 0, seed
     } = req.data
 
     if (!name) return req.reject(400, 'Game name is required')
@@ -46,7 +46,7 @@ module.exports = class GameService extends cds.ApplicationService {
     if (Number(planetDrift) >= Number(shipSpeed)) {
       return req.reject(400, 'planetDrift must stay below shipSpeed - planets would outrun every fleet')
     }
-    const badChance = this.invalidChance({ starBirthChance })
+    const badChance = this.invalidChance({ starBirthChance, supernovaChance })
     if (badChance) return req.reject(400, `${badChance} must be a probability between 0 and 1`)
 
     const ID = cds.utils.uuid()
@@ -64,6 +64,7 @@ module.exports = class GameService extends cds.ApplicationService {
       shipCost,
       planetDrift,
       starBirthChance,
+      supernovaChance,
       seed: seed ?? Math.floor(Math.random() * 0x7fffffff)
     })
 
@@ -338,6 +339,20 @@ module.exports = class GameService extends cds.ApplicationService {
     const playersById = new Map(players.map(p => [p.ID, p]))
 
     return planets.map(planet => {
+      // A burnt out star keeps its dot so the routes leading there still make
+      // sense, but it is no longer anybody's and holds nothing worth reporting.
+      if (planet.destroyed) {
+        const seen = intelByPlanet.get(planet.ID)
+        return {
+          ...this.blankPlanet(planet),
+          explored: !!seen,
+          destroyed: true,
+          name: seen?.knownName ?? null,
+          color: DESTROYED_COLOR,
+          lastSeenTurn: seen?.lastSeenTurn ?? null
+        }
+      }
+
       const mine = !!player && planet.owner_ID === player.ID
       // Own planets are always shown live - garrison changes during the turn.
       if (mine) {
@@ -355,29 +370,13 @@ module.exports = class GameService extends cds.ApplicationService {
           ships: planet.ships,
           natives: 0,
           pendingShips: planet.pendingShips,
-          lastSeenTurn: game.currentTurn
+          lastSeenTurn: game.currentTurn,
+          destroyed: false
         }
       }
 
       const known = intelByPlanet.get(planet.ID)
-      if (!known) {
-        return {
-          number: planet.number,
-          x: planet.x,
-          y: planet.y,
-          explored: false,
-          mine: false,
-          name: null,
-          color: UNKNOWN_COLOR,
-          ownerName: null,
-          production: null,
-          resources: null,
-          ships: null,
-          natives: null,
-          pendingShips: null,
-          lastSeenTurn: null
-        }
-      }
+      if (!known) return this.blankPlanet(planet)
 
       const owner = known.knownOwner_ID ? playersById.get(known.knownOwner_ID) : null
       return {
@@ -394,7 +393,8 @@ module.exports = class GameService extends cds.ApplicationService {
         ships: known.knownShips,
         natives: known.knownNatives,
         pendingShips: null,
-        lastSeenTurn: known.lastSeenTurn
+        lastSeenTurn: known.lastSeenTurn,
+        destroyed: false
       }
     })
   }
@@ -414,6 +414,27 @@ module.exports = class GameService extends cds.ApplicationService {
   }
 
   // ------------------------------------------------------------ helpers
+
+  /** Position and number only - what every player sees of an unknown star. */
+  blankPlanet (planet) {
+    return {
+      number: planet.number,
+      x: planet.x,
+      y: planet.y,
+      explored: false,
+      mine: false,
+      name: null,
+      color: UNKNOWN_COLOR,
+      ownerName: null,
+      production: null,
+      resources: null,
+      ships: null,
+      natives: null,
+      pendingShips: null,
+      lastSeenTurn: null,
+      destroyed: false
+    }
+  }
 
   /** Name of the first special rule probability that is out of range, else null. */
   invalidChance (chances) {
@@ -451,6 +472,9 @@ module.exports = class GameService extends cds.ApplicationService {
     const { Planets } = cds.entities('galactic')
     const planet = await SELECT.one.from(Planets).where({ game_ID: gameId, number })
     if (!planet) return req.reject(404, `Planet #${number} not found`)
+    // A remnant is still a row, but nothing can be sent there, built there or
+    // routed through it.
+    if (planet.destroyed) return req.reject(400, `Planet #${number} was wiped out by a supernova`)
     return planet
   }
 }

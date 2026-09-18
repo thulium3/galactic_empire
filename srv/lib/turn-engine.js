@@ -4,18 +4,19 @@ const cds = require('@sap/cds')
 const { createRng, mixSeed } = require('./rng')
 const { driftPosition } = require('./geometry')
 const { resolveBattle } = require('./combat')
-const { igniteStar } = require('./anomalies')
+const { igniteStar, pickSupernova, divertTarget, divertedArrival } = require('./anomalies')
 const { publish } = require('./event-bus')
 
 /**
  * Advances a game by one turn:
  *   1. every planet drifts one step along its own velocity
- *   2. special rules fire - a new star may ignite
- *   3. ships built last turn become available
- *   4. every owned planet produces into its own stockpile
- *   5. arriving fleets land, fight and capture
- *   6. intel is refreshed, turn reports are written
- *   7. turn counter, deadline and ready flags are reset
+ *   2. special rules fire - a star may ignite, a star may explode
+ *   3. fleets that lost their course are re-targeted
+ *   4. ships built last turn become available
+ *   5. every owned planet produces into its own stockpile
+ *   6. arriving fleets land, fight and capture
+ *   7. intel is refreshed, turn reports are written
+ *   8. turn counter, deadline and ready flags are reset
  *
  * Runs inside the caller's transaction.
  */
@@ -24,10 +25,12 @@ async function resolveTurn (game) {
   const nextTurn = game.currentTurn + 1
   const rng = createRng(mixSeed(game.seed ?? 1, nextTurn))
 
-  const [players, planets, incoming] = await Promise.all([
+  // Every fleet still flying, not just the ones due this turn: a special rule
+  // may push one of them onto a later arrival before the landings are picked.
+  const [players, planets, inFlight] = await Promise.all([
     SELECT.from(Players).where({ game_ID: game.ID }),
     SELECT.from(Planets).where({ game_ID: game.ID }),
-    SELECT.from(Fleets).where({ game_ID: game.ID, arrived: false }).and('arrivalTurn <=', nextTurn).orderBy('ID')
+    SELECT.from(Fleets).where({ game_ID: game.ID, arrived: false }).orderBy('ID')
   ])
 
   const planetsById = new Map(planets.map(p => [p.ID, p]))
@@ -48,6 +51,10 @@ async function resolveTurn (game) {
   }
 
   await resolveStarBirth({ game, planets, planetsById, players, rng, nextTurn, messages })
+  await resolveSupernova({ game, planets, players, playersById, rng, nextTurn, messages })
+  resolveDiversions({ game, fleets: inFlight, planets, planetsById, playersById, rng, nextTurn, messages })
+
+  const incoming = inFlight.filter(f => !f.lost && f.arrivalTurn <= nextTurn)
 
   // Ships ordered last turn join the garrison before the enemy arrives,
   // and planets pay out for the turn they were held - not for the one they are lost in.
@@ -71,7 +78,8 @@ async function resolveTurn (game) {
   resolveArrivals({ incoming, planetsById, playersById, rng, nextTurn, messages, seenBy, game })
 
   await persistPlanets(planets)
-  await markFleetsArrived(incoming)
+  await persistFleets(inFlight)
+  await markFleetsArrived([...incoming, ...inFlight.filter(f => f.lost)])
   await refreshIntel({ seenBy, planetsById, playersById, turn: nextTurn })
 
   const inTransit = await SELECT.from(Fleets).columns('owner_ID').where({ game_ID: game.ID, arrived: false })
@@ -165,6 +173,104 @@ async function resolveStarBirth ({ game, planets, planetsById, players, rng, nex
   }
 }
 
+/**
+ * Special rule: a supernova wipes a star off the map. Every star is fair game,
+ * home worlds included - garrison, natives and stockpile burn with it.
+ *
+ * The row survives as a burnt out remnant: fleets, intel and old turn reports
+ * still point at it, and a fleet already on its way needs a wreck to be
+ * diverted away from.
+ */
+async function resolveSupernova ({ game, planets, players, playersById, rng, nextTurn, messages }) {
+  const doomed = pickSupernova({ planets, game, rng })
+  if (!doomed) return null
+
+  const owner = doomed.owner_ID ? playersById.get(doomed.owner_ID) : null
+  const lostShips = doomed.owner_ID ? doomed.ships : doomed.natives
+  const lostResources = doomed.resources
+
+  Object.assign(doomed, {
+    destroyed: true,
+    owner_ID: null,
+    ships: 0,
+    natives: 0,
+    pendingShips: 0,
+    resources: 0,
+    production: 0,
+    vx: 0,
+    vy: 0,
+    dirty: true
+  })
+
+  // The flash is seen galaxy wide, the name is not: a commander who never
+  // scouted that star only learns that something out there went up.
+  const knowsIt = await playersKnowing(doomed, owner)
+  for (const player of players) {
+    if (player.eliminated) continue
+    const label = knowsIt.has(player.ID) ? `${doomed.name} (#${doomed.number})` : `#${doomed.number}`
+    messages.push(message(game, player, nextTurn, 'SUPERNOVA', doomed, `A supernova wiped out ${label}.`))
+  }
+  if (owner) {
+    messages.push(message(game, owner, nextTurn, 'LOSS', doomed,
+      `${doomed.name} (#${doomed.number}) went up in a supernova. ` +
+      `${lostShips} ships and ${lostResources} stockpiled resources are gone.`))
+  }
+  return doomed
+}
+
+/** IDs of the players who have ever seen this planet, the owner included. */
+async function playersKnowing (planet, owner) {
+  const { PlanetIntel } = cds.entities('galactic')
+  const intel = await SELECT.from(PlanetIntel).columns('player_ID').where({ planet_ID: planet.ID })
+  const known = new Set(intel.map(i => i.player_ID))
+  if (owner) known.add(owner.ID)
+  return known
+}
+
+/**
+ * Re-targets fleets that lost their course. A fleet aimed at a star that no
+ * longer exists has to go somewhere, so it is pushed onto a neighbouring one -
+ * the detour costs it at least one extra turn.
+ *
+ * Its owner is told right away, including where the ships end up: they are out
+ * of his hands, not out of his sight.
+ */
+function resolveDiversions ({ game, fleets, planets, planetsById, playersById, rng, nextTurn, messages }) {
+  for (const fleet of fleets) {
+    const target = planetsById.get(fleet.destination_ID)
+    if (!target?.destroyed) continue
+
+    const player = playersById.get(fleet.owner_ID)
+    const detour = divertTarget({ target, planets, game, rng })
+
+    // Nothing left in the galaxy to fall back on - the ships are stranded.
+    if (!detour) {
+      fleet.lost = true
+      if (player) {
+        messages.push(message(game, player, nextTurn, 'DIVERSION', target,
+          `${fleet.ships} ships were lost with #${target.number} - there was nowhere left to divert them to.`))
+      }
+      continue
+    }
+
+    const arrivalTurn = divertedArrival({ fleet, detour: detour.detour, game, nextTurn })
+    if (player) {
+      messages.push(message(game, player, nextTurn, 'DIVERSION', detour.planet,
+        `The supernova at #${target.number} took the target of ${fleet.ships} ships. ` +
+        `They now head for #${detour.planet.number}, arriving turn ${arrivalTurn}.`))
+    }
+    divert(fleet, detour, arrivalTurn)
+  }
+}
+
+/** Puts a fleet on a new course. Distance grows, the ETA moves back. */
+function divert (fleet, detour, arrivalTurn) {
+  fleet.destination_ID = detour.planet.ID
+  fleet.arrivalTurn = arrivalTurn
+  fleet.distance = Math.round((Number(fleet.distance ?? 0) + detour.detour) * 100) / 100
+  fleet.dirty = true
+}
+
 /** Lands all fleets due this turn, one planet at a time. */
 function resolveArrivals ({ incoming, planetsById, playersById, rng, nextTurn, messages, seenBy, game }) {
   const byPlanet = groupBy(incoming, f => f.destination_ID)
@@ -253,8 +359,12 @@ async function persistPlanets (planets) {
       natives: planet.natives,
       pendingShips: planet.pendingShips,
       resources: planet.resources,
+      production: planet.production,
+      destroyed: !!planet.destroyed,
       x: planet.x,
-      y: planet.y
+      y: planet.y,
+      vx: planet.vx,
+      vy: planet.vy
     })
   }
 }
@@ -266,6 +376,18 @@ async function persistPlayers (players) {
     await UPDATE(Players, player.ID).with({
       eliminated: player.eliminated,
       turnDone: false
+    })
+  }
+}
+
+/** Writes back the fleets a special rule pushed onto a new course. */
+async function persistFleets (fleets) {
+  const { Fleets } = cds.entities('galactic')
+  for (const fleet of fleets.filter(f => f.dirty)) {
+    await UPDATE(Fleets, fleet.ID).with({
+      destination_ID: fleet.destination_ID,
+      arrivalTurn: fleet.arrivalTurn,
+      distance: fleet.distance
     })
   }
 }
