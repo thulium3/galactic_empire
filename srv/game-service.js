@@ -32,7 +32,7 @@ module.exports = class GameService extends cds.ApplicationService {
     const {
       name, planetCount = 99, maxPlayers = 8, turnLimitSec = 300,
       mapWidth = 1000, mapHeight = 1000, shipSpeed = 120, shipCost = 10,
-      planetDrift = 5, seed
+      planetDrift = 5, starBirthChance = 0, seed
     } = req.data
 
     if (!name) return req.reject(400, 'Game name is required')
@@ -46,6 +46,8 @@ module.exports = class GameService extends cds.ApplicationService {
     if (Number(planetDrift) >= Number(shipSpeed)) {
       return req.reject(400, 'planetDrift must stay below shipSpeed - planets would outrun every fleet')
     }
+    const badChance = this.invalidChance({ starBirthChance })
+    if (badChance) return req.reject(400, `${badChance} must be a probability between 0 and 1`)
 
     const ID = cds.utils.uuid()
     await INSERT.into(Games).entries({
@@ -61,6 +63,7 @@ module.exports = class GameService extends cds.ApplicationService {
       shipSpeed,
       shipCost,
       planetDrift,
+      starBirthChance,
       seed: seed ?? Math.floor(Math.random() * 0x7fffffff)
     })
 
@@ -411,6 +414,15 @@ module.exports = class GameService extends cds.ApplicationService {
   }
 
   // ------------------------------------------------------------ helpers
+
+  /** Name of the first special rule probability that is out of range, else null. */
+  invalidChance (chances) {
+    for (const [name, value] of Object.entries(chances)) {
+      const chance = Number(value)
+      if (!Number.isFinite(chance) || chance < 0 || chance > 1) return name
+    }
+    return null
+  }
 
   async loadGame (req, filter = {}) {
     const { Games } = cds.entities('galactic')

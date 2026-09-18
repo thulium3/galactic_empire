@@ -370,3 +370,60 @@ test('a galaxy can be kept still, and planets may not outrun fleets', async () =
     name: 'Backwards', planetCount: 10, maxPlayers: 2, planetDrift: -1, seed: 1
   }, 'alice'), /cannot be negative/)
 })
+
+test('a new star ignites, shows up unexplored and is reported to everyone', async () => {
+  // starBirthChance 1 fires the rule on every single turn.
+  const game = (await post('/createGame', {
+    name: 'Nursery', planetCount: 10, maxPlayers: 2, turnLimitSec: 3600,
+    mapWidth: 600, mapHeight: 600, shipSpeed: 150, planetDrift: 0,
+    starBirthChance: 1, seed: 8080
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  const before = (await fn('starMap', { game }, 'alice')).value
+  assert.equal(before.length, 10)
+
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+
+  const after = (await fn('starMap', { game }, 'alice')).value
+  assert.equal(after.length, 11, 'a star was born')
+
+  const born = after.find(p => !before.some(b => b.number === p.number))
+  assert.equal(born.number, 11, 'it takes the next free number')
+  assert.equal(born.explored, false, 'nobody has been there')
+  assert.equal(born.name, null, 'an unexplored star does not give away its name')
+  assert.ok(Number.isFinite(Number(born.x)), 'its position is visible like every other position')
+  assert.equal(new Set(after.map(p => p.number)).size, 11, 'numbers stay unique')
+
+  // Both players are told - a new star is visible across the galaxy.
+  for (const who of ['alice', 'bob']) {
+    const reports = (await get(`/MyMessages?$filter=game_ID eq ${game} and kind eq 'STARBIRTH'`, who)).value
+    assert.equal(reports.length, 1)
+    assert.equal(reports[0].planetNumber, 11)
+  }
+
+  // ... and it keeps happening, turn after turn.
+  await post('/endTurn', { game }, 'alice')
+  await post('/endTurn', { game }, 'bob')
+  assert.equal((await fn('starMap', { game }, 'alice')).value.length, 12)
+})
+
+test('without the rule the galaxy keeps exactly the stars it started with', async () => {
+  const game = (await post('/createGame', {
+    name: 'Barren', planetCount: 8, maxPlayers: 2, turnLimitSec: 3600, seed: 606
+  }, 'alice')).value
+  await post('/joinGame', { game, name: 'Bob' }, 'bob')
+  await post('/startGame', { game }, 'alice')
+
+  for (let turn = 0; turn < 3; turn++) {
+    await post('/endTurn', { game }, 'alice')
+    await post('/endTurn', { game }, 'bob')
+  }
+  assert.equal((await fn('starMap', { game }, 'alice')).value.length, 8)
+
+  await assert.rejects(() => post('/createGame', {
+    name: 'Impossible', planetCount: 8, maxPlayers: 2, starBirthChance: 2, seed: 1
+  }, 'alice'), /probability between 0 and 1/)
+})

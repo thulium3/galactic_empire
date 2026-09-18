@@ -3,7 +3,7 @@ namespace galactic;
 using { cuid, managed } from '@sap/cds/common';
 
 type GameStatus  : String(10) enum { LOBBY; RUNNING; FINISHED; };
-type MessageKind : String(20) enum { ARRIVAL; COMBAT; CAPTURE; LOSS; SYSTEM; };
+type MessageKind : String(20) enum { ARRIVAL; COMBAT; CAPTURE; LOSS; SYSTEM; STARBIRTH; };
 
 /**
  * A single match. Holds all rules and the turn clock.
@@ -25,6 +25,9 @@ entity Games : cuid, managed {
   startShips    : Integer        default 20;
   seed          : Integer;                      // deterministic galaxy + combat rolls
   winner        : Association to Players;
+
+  // ---- optional special rules, probability per turn, 0 = rule is off ----
+  starBirthChance : Decimal(4, 3) default 0;    // a new star ignites somewhere in the void
 
   players  : Composition of many Players  on players.game  = $self;
   planets  : Composition of many Planets  on planets.game  = $self;

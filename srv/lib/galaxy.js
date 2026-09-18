@@ -18,8 +18,8 @@ function generateGalaxy ({ planetCount, mapWidth, mapHeight, seed, planetDrift =
   const names = shuffle([...PLANET_NAMES], rng)
   if (names.length < planetCount) throw new Error(`Only ${names.length} planet names available for ${planetCount} planets`)
 
-  const minDistance = 0.55 * Math.sqrt((mapWidth * mapHeight) / planetCount)
   const planets = []
+  const minDistance = spacing(planetCount, mapWidth, mapHeight)
 
   for (let i = 0; i < planetCount; i++) {
     const position = findFreePosition(planets, minDistance, mapWidth, mapHeight, rng)
@@ -47,21 +47,23 @@ function generateGalaxy ({ planetCount, mapWidth, mapHeight, seed, planetDrift =
  * Speeds vary per planet so the map shears instead of sliding as one block.
  */
 function assignDrift (planets, planetDrift, seed) {
-  const drift = Number(planetDrift) || 0
   const rng = createRng(mixSeed(seed ?? 1, 0x0d21f7))
-
-  for (const planet of planets) {
-    if (drift <= 0) {
-      planet.vx = 0
-      planet.vy = 0
-      continue
-    }
-    const heading = rng() * 2 * Math.PI
-    const speed = drift * rng.between(0.3, 1)
-    planet.vx = round2(Math.cos(heading) * speed)
-    planet.vy = round2(Math.sin(heading) * speed)
-  }
+  for (const planet of planets) Object.assign(planet, driftVelocity(planetDrift, rng))
   return planets
+}
+
+/** One heading and speed, drawn the same way for generated and newborn stars. */
+function driftVelocity (planetDrift, rng) {
+  const drift = Number(planetDrift) || 0
+  if (drift <= 0) return { vx: 0, vy: 0 }
+  const heading = rng() * 2 * Math.PI
+  const speed = drift * rng.between(0.3, 1)
+  return { vx: round2(Math.cos(heading) * speed), vy: round2(Math.sin(heading) * speed) }
+}
+
+/** Target distance between neighbouring stars for a galaxy of this density. */
+function spacing (planetCount, mapWidth, mapHeight) {
+  return 0.55 * Math.sqrt((mapWidth * mapHeight) / Math.max(1, planetCount))
 }
 
 /**
@@ -118,4 +120,7 @@ function round2 (value) {
   return Math.round(value * 100) / 100
 }
 
-module.exports = { generateGalaxy, assignHomePlanets, assignDrift, HOME_PRODUCTION }
+module.exports = {
+  generateGalaxy, assignHomePlanets, assignDrift, driftVelocity,
+  findFreePosition, spacing, round2, HOME_PRODUCTION
+}

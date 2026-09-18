@@ -39,13 +39,15 @@ and `admin` (roles `player`, `gamemaster`). Password is empty.
 | Combat | `attackers x rnd(0.7..1.3)` vs `defenders x (rnd(0.7..1.3) + 0.1)`, loser is wiped out |
 | Natives | Static defenders, no growth, no ships |
 | Fog of war | Positions always visible; name, owner, production and garrison only after the planet was reached or owned. A stockpile is never visible on a planet that is not yours |
+| Star birth | With `starBirthChance` > 0 a new, uninhabited star may ignite each turn. It is visible to everyone at once but explored by nobody |
 | Turn end | All players ready, or `turnLimitSec` elapsed (background timer) |
 | Elimination | No planets and no fleets left; last player standing wins |
 
-Turn resolution order: planets drift one step -> pending ships join garrisons ->
-every owned planet produces into its own stockpile -> fleets arrive and fight ->
-intel and reports are written -> counters reset. A planet pays out for the turn it
-was held, not for the one it is lost in.
+Turn resolution order: planets drift one step -> special rules fire ->
+pending ships join garrisons -> every owned planet produces into its own
+stockpile -> fleets arrive and fight -> intel and reports are written ->
+counters reset. A planet pays out for the turn it was held, not for the one it
+is lost in.
 
 Drift is integrated from a per planet velocity assigned at galaxy generation, from
 its own seeded RNG stream. Same seed, same trajectories - and adding drift does not
@@ -53,8 +55,21 @@ change where a given seed places its planets. `planetDrift` must stay below
 `shipSpeed`, otherwise a planet could outrun every fleet sent at it. Planets may
 drift into each other; overlap is cosmetic, there are no collisions.
 
-Determinism: `seed` drives galaxy generation and all combat rolls (`seed` mixed with
-the turn number), so a game can be replayed exactly.
+Determinism: `seed` drives galaxy generation, all combat rolls and every special
+rule (`seed` mixed with the turn number), so a game can be replayed exactly.
+
+## Special rules
+
+Optional, off by default, configured per game. Each one is a probability between
+0 and 1 that is rolled once per turn - `0` disables the rule completely, `1`
+fires it every single turn.
+
+| Setting | Rule |
+|---|---|
+| `starBirthChance` | A new star ignites in the void. It gets the next free number, an unused name, a random production of 1-10 and its own drift, but no natives and no owner. Everybody is told a star was born; nobody knows anything else about it until ships get there |
+
+Names come from the same pool as the generated galaxy. Once the pool is spent -
+more than 150 stars in one game - newborns fall back to `Nova 1`, `Nova 2`, ...
 
 ## API
 
@@ -64,7 +79,7 @@ Base path `/odata/v4/game`, all endpoints require role `player`.
 
 | Action | Payload | Returns |
 |---|---|---|
-| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `planetDrift`, `seed` | game UUID (creator joins automatically) |
+| `createGame` | `name`, `planetCount`, `maxPlayers`, `turnLimitSec`, `mapWidth`, `mapHeight`, `shipSpeed`, `shipCost`, `planetDrift`, `starBirthChance`, `seed` | game UUID (creator joins automatically) |
 | `joinGame` | `game`, `name` | player UUID |
 | `startGame` | `game` | `true` - creator or `gamemaster` only |
 | `deleteGame` | `game` | `true` - creator or `gamemaster` only, any status, no undo |

@@ -51,6 +51,11 @@
           <div class="field"><label for="new-drift">Planet drift</label><input id="new-drift" type="number" value="5" min="0" step="0.5"></div>
         </div>
         <p class="hint">Planets drift that many units per turn - 0 keeps the galaxy still.</p>
+        <h3 class="rule-head">Special rules</h3>
+        <div class="field-row">
+          <div class="field"><label for="new-starbirth">Star birth</label><input id="new-starbirth" type="number" value="0" min="0" max="1" step="0.05"></div>
+        </div>
+        <p class="hint">Chance per turn, 0 to 1. Star birth ignites a new, unexplored star.</p>
         <button id="create-btn" class="primary">Create &amp; join</button>
         <p id="lobby-error" class="error"></p>
       </div>

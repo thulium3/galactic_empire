@@ -4,16 +4,18 @@ const cds = require('@sap/cds')
 const { createRng, mixSeed } = require('./rng')
 const { driftPosition } = require('./geometry')
 const { resolveBattle } = require('./combat')
+const { igniteStar } = require('./anomalies')
 const { publish } = require('./event-bus')
 
 /**
  * Advances a game by one turn:
  *   1. every planet drifts one step along its own velocity
- *   2. ships built last turn become available
- *   3. every owned planet produces into its own stockpile
- *   4. arriving fleets land, fight and capture
- *   5. intel is refreshed, turn reports are written
- *   6. turn counter, deadline and ready flags are reset
+ *   2. special rules fire - a new star may ignite
+ *   3. ships built last turn become available
+ *   4. every owned planet produces into its own stockpile
+ *   5. arriving fleets land, fight and capture
+ *   6. intel is refreshed, turn reports are written
+ *   7. turn counter, deadline and ready flags are reset
  *
  * Runs inside the caller's transaction.
  */
@@ -44,6 +46,8 @@ async function resolveTurn (game) {
       planet.dirty = true
     }
   }
+
+  await resolveStarBirth({ game, planets, planetsById, players, rng, nextTurn, messages })
 
   // Ships ordered last turn join the garrison before the enemy arrives,
   // and planets pay out for the turn they were held - not for the one they are lost in.
@@ -126,6 +130,39 @@ function pushTurnEvents ({ game, players, playersById, planetsById, messages, ne
     winner: finished && survivors.length === 1 ? survivors[0].name : null,
     players: players.map(p => ({ name: p.name, color: p.color, eliminated: p.eliminated }))
   })
+}
+
+/**
+ * Special rule: a new star may ignite in the void. It shows up on every star
+ * map right away - positions are never hidden - but nobody has intel on it, so
+ * it is just another grey dot until somebody sends ships.
+ */
+async function resolveStarBirth ({ game, planets, planetsById, players, rng, nextTurn, messages }) {
+  const born = igniteStar({ planets, game, rng })
+  if (!born) return
+
+  const { Planets } = cds.entities('galactic')
+  const row = {
+    ...born,
+    ID: cds.utils.uuid(),
+    game_ID: game.ID,
+    owner_ID: null,
+    ships: 0,
+    pendingShips: 0,
+    resources: 0
+  }
+  await INSERT.into(Planets).entries(row)
+
+  // Part of the galaxy from here on - later phases of this turn see it too.
+  const planet = { ...row, dirty: false }
+  planets.push(planet)
+  planetsById.set(planet.ID, planet)
+
+  for (const player of players) {
+    if (player.eliminated) continue
+    messages.push(message(game, player, nextTurn, 'STARBIRTH', planet,
+      `A new star ignited in the void: #${planet.number}. Nobody has been there yet.`))
+  }
 }
 
 /** Lands all fleets due this turn, one planet at a time. */

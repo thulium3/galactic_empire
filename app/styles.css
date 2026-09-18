@@ -144,6 +144,7 @@ button.link {
 button.link:hover { color: var(--accent); }
 
 .hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.rule-head { margin: 16px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .error { margin: 10px 0 0; color: var(--danger); font-size: 13px; min-height: 18px; }
 
 /* --------------------------------------------------------- game lists */
@@ -349,6 +350,7 @@ button.danger:hover:not(:disabled) { background: var(--danger); color: #0b0e14; 
 .report-list li.LOSS { border-left-color: var(--danger); }
 .report-list li.COMBAT { border-left-color: #f0a92c; }
 .report-list li.ARRIVAL { border-left-color: var(--accent); }
+.report-list li.STARBIRTH { border-left-color: #7ad7ff; }
 .report-list .turn-tag { color: var(--muted); font-size: 10px; }
 
 .side-foot { padding-top: 12px; border-top: 1px solid var(--line); text-align: center; }

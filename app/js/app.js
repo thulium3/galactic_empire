@@ -172,6 +172,7 @@ $('create-btn').addEventListener('click', async () => {
       turnLimitSec: Number($('new-limit').value),
       shipSpeed: Number($('new-speed').value),
       planetDrift: Number($('new-drift').value),
+      starBirthChance: Number($('new-starbirth').value),
       mapWidth: MAP_WIDTH,
       mapHeight: MAP_HEIGHT
     })

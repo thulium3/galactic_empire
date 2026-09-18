@@ -175,3 +175,42 @@ test('drift velocities are seeded, bounded and do not disturb the placement', ()
   assert.ok(still.every((p, i) => p.x === a[i].x && p.y === a[i].y),
     'drift does not shift the placement RNG stream')
 })
+
+test('a star is only born when the rule is switched on', () => {
+  const { igniteStar } = require('../srv/lib/anomalies')
+  const { generateGalaxy } = require('../srv/lib/galaxy')
+  const { createRng } = require('../srv/lib/rng')
+
+  const planets = generateGalaxy({ planetCount: 10, mapWidth: 800, mapHeight: 800, seed: 1, planetDrift: 5 })
+  const game = { mapWidth: 800, mapHeight: 800, planetDrift: 5 }
+
+  const off = createRng(7)
+  for (let i = 0; i < 50; i++) {
+    assert.equal(igniteStar({ planets, game: { ...game, starBirthChance: 0 }, rng: off }), null)
+  }
+
+  const born = igniteStar({ planets, game: { ...game, starBirthChance: 1 }, rng: createRng(7) })
+  assert.equal(born.number, 11, 'the new star takes the next free number')
+  assert.ok(!planets.some(p => p.name === born.name), 'names stay unique')
+  assert.equal(born.natives, 0, 'a newborn star is uninhabited')
+  assert.ok(born.production >= 1 && born.production <= 10)
+  assert.ok(born.x >= 0 && born.x < 800 && born.y >= 0 && born.y < 800)
+  assert.ok(Math.hypot(born.vx, born.vy) <= 5.02, 'it drifts like every other planet')
+
+  // Same seed, same star - anomalies must replay with the game.
+  assert.deepEqual(igniteStar({ planets, game: { ...game, starBirthChance: 1 }, rng: createRng(7) }), born)
+})
+
+test('star birth falls back to numbered names once the pool is spent', () => {
+  const { igniteStar } = require('../srv/lib/anomalies')
+  const { createRng } = require('../srv/lib/rng')
+  const { PLANET_NAMES } = require('../srv/lib/names')
+
+  const planets = PLANET_NAMES.map((name, i) => ({ number: i + 1, name, x: 0, y: 0 }))
+  const game = { mapWidth: 400, mapHeight: 400, planetDrift: 0, starBirthChance: 1 }
+
+  const first = igniteStar({ planets, game, rng: createRng(3) })
+  assert.equal(first.name, 'Nova 1')
+  planets.push(first)
+  assert.equal(igniteStar({ planets, game, rng: createRng(3) }).name, 'Nova 2')
+})
